@@ -9,29 +9,27 @@ import javax.sql.DataSource;
 
 @Configuration
 @PropertySource("classpath:application.properties")
-public class Config
-{
+public class Config {
+
     @Autowired
     Environment mEnv;
 
-    /*
     @Bean
-    public DataSource getDataSource()
-    {
+    public DataSource getDataSource() {
 
-        String dbUrl=System.getenv("JDBC_DATABASE_URL");
-        String username=System.getenv("JDBC_DATABASE_USERNAME");
-        String password=System.getenv("JDBC_DATABASE_PASSWORD");
+        String dbUrl = System.getenv("JDBC_DATABASE_URL");
+        String username = System.getenv("JDBC_DATABASE_USERNAME");
+        String password = System.getenv("JDBC_DATABASE_PASSWORD");
 
-        DriverManagerDataSource ds=new DriverManagerDataSource();
+        DriverManagerDataSource ds = new DriverManagerDataSource();
         ds.setDriverClassName("org.postgresql.Driver");
         ds.setUrl(dbUrl);
         ds.setUsername(username);
         ds.setPassword(password);
 
         return ds;
+
     }
-    */
 
     @Bean(name="com.linecorp.channel_secret")
     public String getChannelSecret()
@@ -45,11 +43,11 @@ public class Config
         return mEnv.getProperty("com.linecorp.channel_access_token");
     }
 
-    /*
     @Bean
-    public Dao getPersonDao()
-    {
+    public Dao getPersonDao() {
+
         return new DaoImpl(getDataSource());
+
     }
-    */
+
 }

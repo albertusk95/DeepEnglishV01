@@ -2,6 +2,7 @@ package com.sai.deepenglish.Master;
 
 import java.io.IOException;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.ArrayList;
@@ -17,6 +18,8 @@ import com.linecorp.bot.model.message.TextMessage;
 import com.linecorp.bot.model.message.template.ButtonsTemplate;
 import com.linecorp.bot.model.profile.UserProfileResponse;
 import com.linecorp.bot.model.response.BotApiResponse;
+import com.sai.deepenglish.DataManager.AnswerController;
+import com.sai.deepenglish.Model.Answer;
 import de.l3s.boilerpipe.document.TextDocument;
 import de.l3s.boilerpipe.extractors.CommonExtractors;
 import de.l3s.boilerpipe.sax.BoilerpipeSAXInput;
@@ -43,6 +46,9 @@ import com.sai.deepenglish.Classifier.PolarityClassifier;
 import com.sai.deepenglish.Model.Payload;
 import com.sai.deepenglish.DataManager.NewDataController;
 import com.sai.deepenglish.DataManager.DistractorGenerator;
+import com.sai.deepenglish.DataManager.QuestionController;
+import com.sai.deepenglish.Database.Dao;
+import com.sai.deepenglish.Model.Question;
 
 @RestController
 @RequestMapping(value="/deepenglishbot")
@@ -57,6 +63,9 @@ public class DeepEnglishController {
 	@Autowired
 	@Qualifier("com.linecorp.channel_access_token")
 	String lChannelAccessToken;
+
+	@Autowired
+	Dao mDao;
 
 
 	private String displayName;
@@ -143,29 +152,46 @@ public class DeepEnglishController {
 
 						} else {
 
-							// Check whether it's an article's body based on the message length
-							if (msgTextLength > 5) {
+							if (!msgText.contains("[start the quiz]")) {
 
-								// Category 2: Article's body
-								processText_ARTICLE_BODY(idTarget, payload.events[0].message.text);
+								// Check whether it's an article's body based on the message length
+								if (msgTextLength > 5) {
+
+									// Category 2: Article's body
+									processText_ARTICLE_BODY(idTarget, payload.events[0].message.text);
+
+								} else {
+
+									// Other categories
+									try {
+										handleOtherCategories(msgText, payload, idTarget);
+									} catch (IOException e) {
+										System.out.println("Exception is raised ");
+										e.printStackTrace();
+									}
+
+								}
 
 							} else {
 
-								// Other categories
-								try {
-									handleOtherCategories(msgText, payload, idTarget);
-								} catch (IOException e) {
-									System.out.println("Exception is raised ");
-									e.printStackTrace();
-								}
+								// Retrieve and show the first question
+								retrieveAndShowTheQuestion(idTarget, 1);
 
 							}
+
 						}
 
 					} else {
 
 						// Category 3: Answer
-						processText_ANSWER(idTarget);
+						// Tokenize the answer template
+						// Get the question number
+						// Answer template: No.<QUESTION_NO><SPACE>[your answer]: [ A ] desc...
+
+						// Get No.<QUESTION_NO> and the answer
+						String[] answerTemplateSplitted = msgText.split("\\s+");
+
+						processText_ANSWER(idTarget, answerTemplateSplitted[0], answerTemplateSplitted[4]);
 
 					}
 
@@ -290,6 +316,12 @@ public class DeepEnglishController {
 			System.out.println("Prediction: " + out);
 			System.out.println("Certainty: " + pc.getPredictionCertainty());
 
+
+			//////////////////
+			//pushMessage(targetID, "pred: " + out + " " + "cert: " + pc.getPredictionCertainty());
+			//////////////////
+
+
 			// Pass the sentence having true label to the Distractor Generator
 			if (out.equals("1")) {
 				//generateDistractor(listOfActualNewDataToBeTested.get(idx), listOfBlankNewDataToBeTested.get(idx));
@@ -300,34 +332,206 @@ public class DeepEnglishController {
 		}
 
 		// HANDLER for the case when the size of the true label is 0?
+		if (listOfEligibleNewData_ACTUAL.size() != 0) {
 
-		generateDistractor(listOfEligibleNewData_ACTUAL, listOfEligibleNewData_BLANK);
+
+			pushMessage(targetID, "I've got " + listOfEligibleNewData_ACTUAL.size() + " eligible questions!");
 
 
-		//pushMessage(targetID, "Prediction: " + out + "; " + "Certainty: " + pc.getPredictionCertainty());
+			List<Integer> listOfDBAccessStatus = generateDistractor(targetID, listOfEligibleNewData_ACTUAL, listOfEligibleNewData_BLANK);
+
+			// Check all the storing status. Send error message when there is one or more zero status
+			int foundZeroStatus = 0;
+
+			for (int storingStatus : listOfDBAccessStatus) {
+
+				if (storingStatus == 0) {
+
+					// There was a failure in storing the data into the database
+					foundZeroStatus = 1;
+					break;
+				}
+
+			}
+
+			if (foundZeroStatus == 1) {
+
+				// Send error push message to user
+				pushMessage(targetID, "Sorry, there was a problem in accessing the database.");
+
+			} else {
+
+				// Send a push message notifying that the bot had generated the questions successfully as well as asking the user
+				// to click 'Start' button to start the test
+				startTheQuizMessage();
+
+			}
+
+		} else {
+
+			pushMessage(targetID, "Sorry, I can't generate questions from the requested article.");
+
+		}
 
 
 	}
 
 
 	// Category 3
-	private void processText_ANSWER(String targetID) {
+	private void processText_ANSWER(String targetID, String questionNo, String chosenAnswer) {
+
+		// Get the question number by tokenizing it with dot as the delimiter
+		String[] tokenizedQuestionNo = questionNo.split("\\.");
+
+		// Get the question number
+		int actualQuestNo = Integer.parseInt(tokenizedQuestionNo[1]);
 
 
+		// --------------------------------------------------------
+
+		//////////////////////////////
+		pushMessage(targetID, "CHECK ANSWER: " + actualQuestNo + " : " + chosenAnswer);
+		//////////////////////////////
+
+		// CHECK THE ANSWER
+
+		AnswerController ac = new AnswerController(targetID, lChannelAccessToken, tokenizedQuestionNo[1], chosenAnswer);
+
+		// set mDao
+		ac.setDao(mDao);
+
+		// check the result
+		//int answerValue = ac.checkAnswer();
+
+		// store the answer in the database
+		int storingAnswerStatus = ac.storeAnswerInDB();
+
+
+		// --------------------------------------------------------
+
+		// Retrieve the next question
+		retrieveAndShowTheQuestion(targetID, actualQuestNo + 1);
 
 	}
 
 
-	private void generateDistractor(List<String> listOfEligibleActualNewData, List<String> listOfEligibleBlankNewData) {
+	/**
+	 * REMOVE targetID & lChannelAccessToken on generateDistractor and dg.generateDistractor and CTOR - DEBUGGING PURPOSE
+	 */
+	private List<Integer> generateDistractor(String targetID, List<String> listOfEligibleActualNewData, List<String> listOfEligibleBlankNewData) {
 
 		String pathToAllEnglishWords = "data/english_dict/words.txt";
 
-		DistractorGenerator dg = new DistractorGenerator(pathToAllEnglishWords, listOfEligibleActualNewData, listOfEligibleBlankNewData);
+		DistractorGenerator dg = new DistractorGenerator(lChannelAccessToken, pathToAllEnglishWords, listOfEligibleActualNewData, listOfEligibleBlankNewData);
 
+		// set mDao
+		dg.setDao(mDao);
+
+		// retrieve and set up all english words
 		List<String> listOfEnglishWords = dg.retrieveAllEnglishWords();
-
 		dg.setListOfEnglishWords(listOfEnglishWords);
-		dg.generateDistractor();
+
+
+		pushMessage(targetID, "Successfully set list of english words: " + listOfEnglishWords.size() + ", " + listOfEligibleBlankNewData.size());
+
+
+		List<Integer> listOfDBAccessStatus = dg.generateDistractor(targetID);
+
+		return listOfDBAccessStatus;
+
+	}
+
+
+	private void retrieveAndShowTheQuestion(String targetID, int questionNumber) {
+
+
+
+		//////////////////////////
+		pushMessage(targetID, "Inside retrieveAndShowTheQuestion: " + questionNumber);
+		//////////////////////////
+
+
+		QuestionController qc = new QuestionController(questionNumber);
+
+		// set mDao
+		qc.setDao(mDao);
+
+		// retrieve question with number <questionNumber>
+
+		// REMOVE THE TWO PARAMETERS !!!
+		Question retrievedQuestion = qc.retrieveQuestion(targetID, lChannelAccessToken);
+
+
+		// Check if the whole questions are already shown
+		if (retrievedQuestion == null) {
+
+			// Send a push message notifying that the quiz is finished
+			pushMessage(targetID, "You've answered all the questions! Thank you.");
+
+			// Show the result
+			showTheQuizResult(targetID);
+
+		} else {
+
+			// Question and answer text
+			String questionAndAnswer = "[Question " + String.valueOf(questionNumber) + "]\n\n";
+			questionAndAnswer = questionAndAnswer + retrievedQuestion.getQuestion() + "\n\n";
+			questionAndAnswer = questionAndAnswer + "[Answers]:" + "\n\n";
+			questionAndAnswer = questionAndAnswer + "[ A ] " + retrievedQuestion.getChoiceZero() + "\n";
+			questionAndAnswer = questionAndAnswer + "[ B ] " + retrievedQuestion.getChoiceOne() + "\n";
+			questionAndAnswer = questionAndAnswer + "[ C ] " + retrievedQuestion.getChoiceTwo() + "\n";
+			questionAndAnswer = questionAndAnswer + "[ D ] " + retrievedQuestion.getChoiceThree();
+
+
+			// Label answer: A, B, C, D
+			String[] labelAnswer = new String[4];
+			labelAnswer[0] = "A";
+			labelAnswer[1] = "B";
+			labelAnswer[2] = "C";
+			labelAnswer[3] = "D";
+
+
+			// Answer template: No.<questionNo><SPACE>[your_answer]: A
+			String[] actionAnswer = new String[4];
+			actionAnswer[0] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ A ] " + retrievedQuestion.getChoiceZero();
+			actionAnswer[1] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ B ] " + retrievedQuestion.getChoiceOne();
+			actionAnswer[2] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ C ] " + retrievedQuestion.getChoiceTwo();
+			actionAnswer[3] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ D ] " + retrievedQuestion.getChoiceThree();
+
+
+			// Show the button template so that user can choose his/her answer
+			String questionMsg = "Choose your answer";
+			String title = "Answer";
+
+
+			// Show the question and answer
+			pushMessage(targetID, questionAndAnswer);
+
+			// Show the answer button template
+			buttonTemplate(questionMsg, labelAnswer, actionAnswer, title);
+
+		}
+
+	}
+
+	// Method for showing the final result of the quiz
+	private void showTheQuizResult(String targetID) {
+
+		List<Answer> answerHistory = mDao.getAnswerHistory();
+
+		// send a push message notifying the quiz result
+		String quizResult = "";
+		quizResult = quizResult + "[Quiz result]\n\n";
+		quizResult = quizResult + "(No, Your Answer, Right Answer)\n";
+		quizResult = quizResult + "-------------------------------\n\n";
+
+		for (Answer ans : answerHistory) {
+
+			quizResult = quizResult + "(" + ans.getQuestionNo() + ", " + ans.getChosenAnswer() + ", " + ans.getRightAnswer() + ")\n";
+
+		}
+
+		pushMessage(targetID, quizResult);
 
 	}
 
@@ -390,6 +594,27 @@ public class DeepEnglishController {
 
 	}
 
+
+	// Method for sending message when there a user adds this bot as friend
+	private void greetingMessage() {
+
+		getUserProfile(payload.events[0].source.userId);
+
+		String greetingMsg = "Hi " + displayName + "! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill. Let's learn together!" + payload.events[0].replyToken;
+
+		String[] label = new String[1];
+		label[0] = "Read the Rules";
+
+		String[] action = new String[1];
+		action[0] = "[read the rules]";
+
+		String title = "Welcome";
+
+		buttonTemplate(greetingMsg, label, action, title);
+
+	}
+
+
 	// Method for replying message to user
 	private void replyToUser(String rToken, String messageToUser) {
 
@@ -413,18 +638,24 @@ public class DeepEnglishController {
 
 	}
 
-	// Method for sending message when there a user adds this bot as friend
-	private void greetingMessage() {
 
-		getUserProfile(payload.events[0].source.userId);
+	// Method for sending message as a notification to start the quiz
+	private void startTheQuizMessage() {
 
-		String greetingMsg = "Hi " + displayName + "! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill. Let's learn together!" + payload.events[0].replyToken;
-		String action = "Read the rules";
-		String title = "Welcome";
+		String greetingMsg = "Thank you for the resource. I'd successfully generated several questions based on the resource you submitted. Just click the button below to start the quiz.";
 
-		buttonTemplate(greetingMsg, action, action, title);
+		String[] label = new String[1];
+		label[0] = "Start the Quiz";
+
+		String[] action = new String[1];
+		action[0] = "[start the quiz]";
+
+		String title = "Start the Quiz";
+
+		buttonTemplate(greetingMsg, label, action, title);
 
 	}
+
 
 	// Method for handling other categories
 	private void handleOtherCategories(String userTxt, Payload ePayload, String targetID) throws IOException {
@@ -444,11 +675,27 @@ public class DeepEnglishController {
 
 	}
 
-	// Method for creating a button template
-	private void buttonTemplate(String message, String label, String action, String title) {
 
-		ButtonsTemplate buttonsTemplate = new ButtonsTemplate(null, null, message,
-				Collections.singletonList(new MessageAction(label, action)));
+	// Method for creating a button template
+	private void buttonTemplate(String message, String[] label, String[] action, String title) {
+
+		ButtonsTemplate buttonsTemplate;
+
+		if (title.equals("Welcome") || title.equals("Start the Quiz")) {
+
+			buttonsTemplate = new ButtonsTemplate(null, null, message,
+					Arrays.asList(new MessageAction(label[0], action[0])));
+
+		} else {
+
+			buttonsTemplate = new ButtonsTemplate(null, title, message,
+					Arrays.asList(new MessageAction(label[0], action[0]),
+							new MessageAction(label[1], action[1]),
+							new MessageAction(label[2], action[2]),
+							new MessageAction(label[3], action[3])
+					));
+
+		}
 
 		TemplateMessage templateMessage = new TemplateMessage(title, buttonsTemplate);
 		PushMessage pushMessage = new PushMessage(payload.events[0].source.userId, templateMessage);
@@ -469,6 +716,7 @@ public class DeepEnglishController {
 		}
 
 	}
+
 
 	// Method for leaving group or room
 	private void leaveGR(String id, String type) {
