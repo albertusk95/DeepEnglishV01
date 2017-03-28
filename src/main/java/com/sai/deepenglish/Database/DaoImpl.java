@@ -41,6 +41,9 @@ public class DaoImpl implements Dao {
     private final static String SQL_CLEAR_QUESTIONS_TABLE = "DELETE FROM questions_table;";
     private final static String SQL_GET_QUESTION_BY_NUMBER = SQL_SELECT_ALL_QUESTION + " WHERE LOWER(question_no) LIKE LOWER(?);";
 
+    private final static String SQL_SELECT_ALL_QUESTION_FOR_DELETE = "SELECT id, question_no, question, choice_zero, choice_one, choice_two, choice_three FROM questions_table;";
+
+
     // Query for answers table
     private final static String SQL_SELECT_ALL_ANSWER = "SELECT id, question_no, chosen_answer, right_answer FROM answers_table;";
     private final static String SQL_STORE_ANSWER = "INSERT INTO answers_table (question_no, chosen_answer, right_answer) VALUES (?, ?, ?);";
@@ -105,6 +108,7 @@ public class DaoImpl implements Dao {
             }
 
             return list;
+
         }
     };
 
@@ -130,6 +134,7 @@ public class DaoImpl implements Dao {
             }
 
             return list;
+
         }
     };
 
@@ -158,13 +163,16 @@ public class DaoImpl implements Dao {
     // Clear the questions table
     public int clearQuestionsTable(String targetID, String lChannelAccessToken) {
 
-        if (mJdbc.query(SQL_GET_QUESTION_BY_NUMBER, new Object[]{"'" + String.valueOf(1) + "'"}, MULTIPLE_RS_EXTRACTOR_QUESTION) != null) {
-        //if (mJdbc.query(SQL_GET_QUESTION_BY_NUMBER, new Object[]{"'" + String.valueOf(1) + "'"}, SINGLE_RS_EXTRACTOR_QUESTION) != null) {
+        List<Question> clearLQ = mJdbc.query(SQL_SELECT_ALL_QUESTION_FOR_DELETE, MULTIPLE_RS_EXTRACTOR_QUESTION);
+
+        if (clearLQ.size() != 0) {
 
             // not empty
 
             ///////////////////////////////////////
-            pushMessage(targetID, lChannelAccessToken, "TABLE QUESTIONS IS NOT EMPTY");
+            //pushMessage(targetID, lChannelAccessToken, "TABLE QUESTIONS IS NOT EMPTY " + " "
+            //            + clearLQ.size() + " "
+            //            + clearLQ.get(0));
             ///////////////////////////////////////
 
             return mJdbc.update(SQL_CLEAR_QUESTIONS_TABLE);
@@ -174,10 +182,11 @@ public class DaoImpl implements Dao {
         // already empty
 
         ///////////////////////////////////////
-        pushMessage(targetID, lChannelAccessToken, "TABLE QUESTIONS IS EMPTY");
+        //pushMessage(targetID, lChannelAccessToken, "TABLE QUESTIONS IS EMPTY " + " "
+        //                + clearLQ.size());
         ///////////////////////////////////////
 
-        return 1;
+        return 0;
 
     }
 
@@ -191,12 +200,14 @@ public class DaoImpl implements Dao {
     // Clear answers table
     public int clearAnswersTable(String targetID, String lChannelAccessToken) {
 
-        if (mJdbc.query(SQL_GET_ANSWERS_BY_NUMBER, new Object[]{"'" + String.valueOf(1) + "'"}, MULTIPLE_RS_EXTRACTOR_ANSWER) != null) {
+        List<Answer> clearLA = mJdbc.query(SQL_SELECT_ALL_ANSWER, MULTIPLE_RS_EXTRACTOR_ANSWER);
+
+        if (clearLA.size() != 0) {
 
             // not empty
 
             ///////////////////////////////////////
-            pushMessage(targetID, lChannelAccessToken, "TABLE ANSWERS IS NOT EMPTY");
+            //pushMessage(targetID, lChannelAccessToken, "TABLE ANSWERS IS NOT EMPTY " + clearLA.size());
             ///////////////////////////////////////
 
             return mJdbc.update(SQL_CLEAR_ANSWERS_TABLE);
@@ -206,10 +217,10 @@ public class DaoImpl implements Dao {
         // already empty
 
         ///////////////////////////////////////
-        pushMessage(targetID, lChannelAccessToken, "TABLE ANSWERS IS EMPTY");
+        //pushMessage(targetID, lChannelAccessToken, "TABLE ANSWERS IS EMPTY " + clearLA.size());
         ///////////////////////////////////////
 
-        return 1;
+        return 0;
 
     }
 

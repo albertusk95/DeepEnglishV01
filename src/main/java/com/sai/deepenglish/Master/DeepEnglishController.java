@@ -73,6 +73,8 @@ public class DeepEnglishController {
 	// quizStatus 0 means the quiz is not running
 	private int quizStatus = 0;
 
+	private String quizNotification;
+
 
 	@RequestMapping(value="/callback", method= RequestMethod.POST)
 	public ResponseEntity<String> callback(@RequestBody String aPayload) {
@@ -137,7 +139,8 @@ public class DeepEnglishController {
 				} else {
 
 					// quiz is running. I don't recognize the request. Try it later.
-					runningQuizNotification(idTarget);
+					quizNotification = "Hi, I can't accept your request while the quiz is running. Please try again later when the quiz is finished.";
+					sendQuizNotification(idTarget);
 
 				}
 
@@ -157,6 +160,8 @@ public class DeepEnglishController {
 
 							if (quizStatus == 0) {
 
+								quizStatus = 1;
+
 								// Category 1: Link
 								String linkContent = processLinkContent(idTarget);
 								processText_ARTICLE_BODY(idTarget, linkContent);
@@ -164,7 +169,8 @@ public class DeepEnglishController {
 							} else {
 
 								// quiz is running
-								runningQuizNotification(idTarget);
+								quizNotification = "Hi, the quiz is running right now. I can't accept that new URL as a resource. Please try again later when the quiz is finished.";
+								sendQuizNotification(idTarget);
 
 							}
 
@@ -175,10 +181,9 @@ public class DeepEnglishController {
 								// Check whether it's an article's body based on the message length
 								if (msgTextLength > 50) {
 
-									// CONSIDERATION:
-									// Hi, your text is more than 50 chars. I consider it as a new request for the quiz.
-
 									if (quizStatus == 0) {
+
+										replyToUser(payload.events[0].replyToken, "Hi, your text has more than 50 characters. I consider it as a new resource for the quiz.");
 
 										// Category 2: Article's body
 										processText_ARTICLE_BODY(idTarget, payload.events[0].message.text);
@@ -186,7 +191,8 @@ public class DeepEnglishController {
 									} else {
 
 										// quiz is still running
-										runningQuizNotification(idTarget);
+										quizNotification = "Hi, I can't accept that new article as a resource while the quiz is running. Please try again later when the quiz is finished.";
+										sendQuizNotification(idTarget);
 
 									}
 
@@ -195,20 +201,7 @@ public class DeepEnglishController {
 									// Other categories
 									try {
 
-										if (quizStatus == 0) {
-
-											handleOtherCategories(msgText, idTarget);
-
-										} else {
-
-											// CONSIDERATION:
-											// Hi, the quiz is running and I don't recognize your request. Try to send it back when
-											// the quis is not at the running state
-
-											// quiz is still running
-											runningQuizNotification(idTarget);
-
-										}
+										handleOtherCategories(msgText, idTarget);
 
 									} catch (IOException e) {
 										System.out.println("Exception is raised ");
@@ -221,6 +214,9 @@ public class DeepEnglishController {
 
 								if (quizStatus == 0) {
 
+									// set the quiz status
+									quizStatus = 1;
+
 									// Initialize the timer
 									initializeTimer(idTarget);
 
@@ -230,7 +226,8 @@ public class DeepEnglishController {
 								} else {
 
 									// quiz is still running
-									runningQuizNotification(idTarget);
+									quizNotification = "Hi, the quiz is currently running. You can start again when this quiz is completed.";
+									sendQuizNotification(idTarget);
 
 								}
 
@@ -255,7 +252,8 @@ public class DeepEnglishController {
 						} else {
 
 							// quiz is not running
-							notRunningQuizNotification(idTarget);
+							quizNotification = "Hi, there is no any quiz running right now. You can submit an answer in a running quiz.";
+							sendQuizNotification(idTarget);
 
 						}
 					}
@@ -459,32 +457,44 @@ public class DeepEnglishController {
 			pushMessage(targetID, "Hi! I've got " + listOfEligibleNewData_ACTUAL.size() + " eligible questions!");
 
 
-			List<Integer> listOfDBAccessStatus = generateDistractor(targetID, listOfEligibleNewData_ACTUAL, listOfEligibleNewData_BLANK);
+			// Clear the questions table
+			int clearingStatus = clearQuestionsTable(targetID);
 
-			// Check all the storing status. Send error message when there is one or more zero status
-			int foundZeroStatus = 0;
+			if (clearingStatus >= 0) {
 
-			for (int storingStatus : listOfDBAccessStatus) {
+				List<Integer> listOfDBAccessStatus = generateDistractor(targetID, listOfEligibleNewData_ACTUAL, listOfEligibleNewData_BLANK);
 
-				if (storingStatus == 0) {
+				// Check all the storing status. Send error message when there is one or more zero status
+				int foundZeroStatus = 0;
 
-					// There was a failure in storing the data into the database
-					foundZeroStatus = 1;
-					break;
+				for (int storingStatus : listOfDBAccessStatus) {
+
+					if (storingStatus == 0) {
+
+						// There was a failure in storing the data into the database
+						foundZeroStatus = 1;
+						break;
+					}
+
 				}
 
-			}
+				if (foundZeroStatus == 1) {
 
-			if (foundZeroStatus == 1) {
+					// Send error push message to user
+					pushMessage(targetID, "Sorry, there was a problem in accessing the database.");
 
-				// Send error push message to user
-				pushMessage(targetID, "Sorry, there was a problem in accessing the database.");
+				} else {
+
+					// Send a push message notifying that the bot had generated the questions successfully as well as asking the user
+					// to click 'Start' button to start the test
+					startTheQuizMessage();
+
+				}
 
 			} else {
 
-				// Send a push message notifying that the bot had generated the questions successfully as well as asking the user
-				// to click 'Start' button to start the test
-				startTheQuizMessage();
+				// Send error push message to user
+				pushMessage(targetID, "Sorry, there was a problem in accessing the database [clear: table question]");
 
 			}
 
@@ -546,33 +556,20 @@ public class DeepEnglishController {
 
 		List<Integer> listOfDBAccessStatus;
 
+		DistractorGenerator dg = new DistractorGenerator(lChannelAccessToken, pathToAllEnglishWords, listOfEligibleActualNewData, listOfEligibleBlankNewData);
 
-		// Clear the questions table
-		int clearingQuestTableStatus = clearQuestionsTable(targetID);
+		// set mDao
+		dg.setDao(mDao);
 
-		if (clearingQuestTableStatus == 1) {
-
-			DistractorGenerator dg = new DistractorGenerator(lChannelAccessToken, pathToAllEnglishWords, listOfEligibleActualNewData, listOfEligibleBlankNewData);
-
-			// set mDao
-			dg.setDao(mDao);
-
-			// retrieve and set up all english words
-			List<String> listOfEnglishWords = dg.retrieveAllEnglishWords();
-			dg.setListOfEnglishWords(listOfEnglishWords);
+		// retrieve and set up all english words
+		List<String> listOfEnglishWords = dg.retrieveAllEnglishWords();
+		dg.setListOfEnglishWords(listOfEnglishWords);
 
 
-			pushMessage(targetID, "Successfully set list of english words: " + listOfEnglishWords.size() + ", " + listOfEligibleBlankNewData.size());
+		pushMessage(targetID, "Successfully set list of english words: " + listOfEnglishWords.size() + ", " + listOfEligibleBlankNewData.size());
 
 
-			listOfDBAccessStatus = dg.generateDistractor(targetID);
-
-		} else {
-
-			listOfDBAccessStatus = new ArrayList<Integer>();
-			listOfDBAccessStatus.add(clearingQuestTableStatus);
-
-		}
+		listOfDBAccessStatus = dg.generateDistractor(targetID);
 
 		return listOfDBAccessStatus;
 
@@ -582,7 +579,13 @@ public class DeepEnglishController {
 	// Method for initializing questions table
 	private int clearQuestionsTable(String targetID) {
 
+		// RETURN the number of deleted rows
+
 		int clearingQuestTableStatus = mDao.clearQuestionsTable(targetID, lChannelAccessToken);
+
+		///////////////////////
+		pushMessage(targetID, "clearQuestionsTableStatus: " + clearingQuestTableStatus);
+		///////////////////////
 
 		return clearingQuestTableStatus;
 
@@ -592,7 +595,13 @@ public class DeepEnglishController {
 	// Method for initializing answers table
 	private int clearAnswersTable(String targetID) {
 
+		// RETURN the number of deleted rows
+
 		int clearingAnsTableStatus = mDao.clearAnswersTable(targetID, lChannelAccessToken);
+
+		///////////////////////
+		pushMessage(targetID, "clearAnswersTableStatus: " + clearingAnsTableStatus);
+		///////////////////////
 
 		return clearingAnsTableStatus;
 
@@ -607,14 +616,15 @@ public class DeepEnglishController {
 		//////////////////////////
 
 
-		int clearingAnsTableStatus = 1;
+		int clearingAnsTableStatus = 0;
 
-		// If the question number is 1, clear the answers table
 		if (questionNumber == 1) {
+
 			clearingAnsTableStatus = clearAnswersTable(targetID);
+
 		}
 
-		if (clearingAnsTableStatus == 1) {
+		if (clearingAnsTableStatus >= 0) {
 
 			QuestionController qc = new QuestionController(questionNumber);
 
@@ -679,9 +689,10 @@ public class DeepEnglishController {
 
 		} else {
 
-			pushMessage(targetID, "Sorry, there was an error in accessing database [clear: table answers]");
+			pushMessage(targetID, "Sorry, there was an error in accessing the database [clear: table answer]");
 
 		}
+
 	}
 
 
@@ -710,7 +721,7 @@ public class DeepEnglishController {
 
 
 		/////////////////
-		//pushMessage(targetID, "date start: " + dateStart);
+		pushMessage(targetID, "date start: " + dateStart);
 		/////////////////
 
 
@@ -753,6 +764,9 @@ public class DeepEnglishController {
 
 	// Method for showing the final result of the quiz
 	private void showTheQuizResult(String targetID) {
+
+		// set the quiz status to 0 (stop)
+		quizStatus = 0;
 
 		List<Answer> answerHistory = mDao.getAnswerHistory();
 
@@ -842,40 +856,23 @@ public class DeepEnglishController {
 	}
 
 
-	// Method for notifying that the quiz is currently running and providing an option to see the rules
-	private void runningQuizNotification(String targetID) {
+	// Method for notifying the quiz state
+	private void sendQuizNotification(String targetID) {
 
 		//getUserProfile(payload.events[0].source.userId);
 
 		String title = "Quiz State";
-		String runningQuizMsg = "Hi, the quiz is currently running now. You can see the rules by clicking the button below.";
+		String runningQuizMsg = quizNotification;
 		String label[] = new String[1];
 		label[0] = "Read the Rules";
 
 		String action[] = new String[1];
-		action[1] = "[read the rules]";
+		action[0] = "[read the rules]";
 
 		buttonTemplate(runningQuizMsg, label, action, title);
 
 	}
 
-
-	// Method for noityfing that the quiz is currently not running
-	private void notRunningQuizNotification(String targetID) {
-
-		//getUserProfile(payload.events[0].source.userId);
-
-		String title = "Quiz State";
-		String notRunningQuizMsg = "Hi, the quiz is currently not running now. You can see the rules by clicking the button below.";
-		String label[] = new String[1];
-		label[0] = "Read the Rules";
-
-		String action[] = new String[1];
-		action[1] = "[read the rules]";
-
-		buttonTemplate(notRunningQuizMsg, label, action, title);
-
-	}
 
 	// Method for pushing message
 	private void pushMessage(String sourceId, String txt) {
@@ -945,19 +942,8 @@ public class DeepEnglishController {
 	}
 
 
-	// Method for setting current status of the quiz
-	private void setQuizStatus(int qStatus) {
-
-		quizStatus = qStatus;
-
-	}
-
-
 	// Method for sending message as a notification to start the quiz
 	private void startTheQuizMessage() {
-
-		// set the quiz status to 1 (running)
-		setQuizStatus(1);
 
 		String greetingMsg = "Thank you for the resource. I'd successfully generated several questions based on the resource you submitted. Just click the button below to start the quiz.";
 
@@ -978,9 +964,6 @@ public class DeepEnglishController {
 	private void handleOtherCategories(String userTxt, String targetID) throws IOException {
 
 		if (userTxt.contains("end quiz")) {
-
-			// set the quiz status to 0 (stop)
-			setQuizStatus(0);
 
 			// finish the quiz and show the result
 			replyToUser(payload.events[0].replyToken, "As you wish. Ending the quiz. Done.");
