@@ -861,13 +861,19 @@ public class DeepEnglishController {
 
 		//getUserProfile(payload.events[0].source.userId);
 
-		String title = "Quiz State";
+		String title = "Your Quiz State";
 		String runningQuizMsg = quizNotification;
-		String label[] = new String[1];
-		label[0] = "Read the Rules";
 
-		String action[] = new String[1];
-		action[0] = "[read the rules]";
+		String[] label = new String[3];
+		label[0] = "Who am I?";
+		label[1] = "What can you do?";
+		label[2] = "What are my technical support?";
+
+		String[] action = new String[3];
+		action[0] = "[who am i]";
+		action[1] = "[what can you do]";
+		action[2] = "[what are my technical support]";
+
 
 		buttonTemplate(runningQuizMsg, label, action, title);
 
@@ -903,15 +909,19 @@ public class DeepEnglishController {
 
 		getUserProfile(payload.events[0].source.userId);
 
-		String greetingMsg = "Hi " + displayName + "! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill. Let's learn together!";
+		String greetingMsg = "Hi " + displayName + "! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill. Just click on any button below to get acquainted with me :)";
 
-		String[] label = new String[1];
-		label[0] = "Read the Rules";
+		String[] label = new String[3];
+		label[0] = "Who am I?";
+		label[1] = "What can you do?";
+		label[2] = "What are my technical support?";
 
-		String[] action = new String[1];
-		action[0] = "[read the rules]";
+		String[] action = new String[3];
+		action[0] = "[who am i]";
+		action[1] = "[what can you do]";
+		action[2] = "[what are my technical support]";
 
-		String title = "Welcome";
+		String title = "Welcome to DeepEnglish!";
 
 		buttonTemplate(greetingMsg, label, action, title);
 
@@ -963,12 +973,65 @@ public class DeepEnglishController {
 	// Method for handling other categories
 	private void handleOtherCategories(String userTxt, String targetID) throws IOException {
 
+		String deepEngMsg = "";
+
 		if (userTxt.contains("end quiz")) {
 
 			// finish the quiz and show the result
 			replyToUser(payload.events[0].replyToken, "As you wish. Ending the quiz. Done.");
 
 			showTheQuizResult(targetID);
+
+		} else if (userTxt.contains("[who am i]")) {
+
+			// Show the basic idea of DeepEnglish
+
+			deepEngMsg = deepEngMsg + "[WHO AM I?]\n";
+			deepEngMsg = deepEngMsg + "-----------";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "I'm here to help you in improving your English reading comprehension skill. ";
+			deepEngMsg = deepEngMsg + "You'll learn through a reading quiz in the form of multiple choice questions.";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "[THE BASIC IDEA]\n";
+			deepEngMsg = deepEngMsg + "----------------\n";
+			deepEngMsg = deepEngMsg + "You can read any articles written in English and try to understand what the article is all about. ";
+			deepEngMsg = deepEngMsg + "Then, just give me that article and I'll generate several multiple choice questions based on it. ";
+			deepEngMsg = deepEngMsg + "I'll try to understand the topic of the article and provide you with qualified questions. I'll also ";
+			deepEngMsg = deepEngMsg + "try to create the 4 possible answers which can probably be tricky for you. I do this to examine your ";
+			deepEngMsg = deepEngMsg + "understanding on the article you gave to me beforehand.";
+
+			// Send as a push message
+			pushMessage(targetID, deepEngMsg);
+
+		} else if (userTxt.contains("[what can you do]")) {
+
+			deepEngMsg = deepEngMsg + "[WHAT CAN YOU DO?]\n";
+			deepEngMsg = deepEngMsg + "------------------";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "Here are the main process you can do to get the maximum learning value:\n";
+			deepEngMsg = deepEngMsg + "1. Search any articles written in English. The topic can be anything.\n\n";
+			deepEngMsg = deepEngMsg + "2. Read that article and try to get its primary topic. You should do this in the similar way ";
+			deepEngMsg = deepEngMsg + "when you take a TOEFL, IELTS, or TOEIC test.\n\n";
+			deepEngMsg = deepEngMsg + "3. Afterwards, simply send that article to me. You can do it in two ways, namely provide me the ";
+			deepEngMsg = deepEngMsg + "URL (link) of that article OR just by copying and pasteing the article.\n\n";
+			deepEngMsg = deepEngMsg + "4. I'll try to understand the article and then generate several multiple choice questions ";
+			deepEngMsg = deepEngMsg + "based on it. This process may take a few seconds, so I hope that you can be patient :)\n\n";
+			deepEngMsg = deepEngMsg + "5. If I successfully found the eligible questions, I'll show a message notifying the next ";
+			deepEngMsg = deepEngMsg + "process. Vice versa, I'll also show a message notifying that the process of question generation ";
+			deepEngMsg = deepEngMsg + "can't be completed successfully. For the latter case, there's a possibility that I couldn't find ";
+			deepEngMsg = deepEngMsg + "any questions that are good enough to examine your understanding. Just try to provide me with another article :)\n\n";
+			deepEngMsg = deepEngMsg + "6. For the success condition, I'll provide the question one by one and move on to the other ";
+			deepEngMsg = deepEngMsg + "when you've submitted an answer for the corresponding question.\n\n";
+			deepEngMsg = deepEngMsg + "7. You can choose to complete all questions generated by me OR end the quiz while it's running. ";
+			deepEngMsg = deepEngMsg + "For the latter case, just type 'end quiz' and I'll stop the quiz.\n\n";
+			deepEngMsg = deepEngMsg + "8. After the quiz is finished (or ended in the middle session), I'll show your quiz result. ";
+			deepEngMsg = deepEngMsg + "It includes the total number of correct answers, the completion time, and the answer history.\n\n";
+
+			// Send as a push message
+			pushMessage(targetID, deepEngMsg);
 
 		}
 
@@ -980,10 +1043,18 @@ public class DeepEnglishController {
 
 		ButtonsTemplate buttonsTemplate;
 
-		if (title.equals("Welcome") || title.equals("Start the Quiz") || title.equals("Quiz State")) {
+		if (title.equals("Start the Quiz")) {
 
 			buttonsTemplate = new ButtonsTemplate(null, null, message,
 					Arrays.asList(new MessageAction(label[0], action[0])));
+
+		} else if (title.equals("Welcome to DeepEnglish!") || title.equals("Your Quiz State")) {
+
+			buttonsTemplate = new ButtonsTemplate(null, null, message,
+					Arrays.asList(new MessageAction(label[0], action[0]),
+							new MessageAction(label[1], action[1]),
+							new MessageAction(label[2], action[2])
+					));
 
 		} else {
 
