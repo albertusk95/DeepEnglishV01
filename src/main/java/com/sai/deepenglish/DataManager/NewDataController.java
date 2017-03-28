@@ -67,7 +67,7 @@ public class NewDataController {
             tmp_token = token[j];
 
             // change the token to "[]" as the blank position
-            token[j] = "[]";
+            token[j] = "[ ]";
 
             // create a new text including the blank position
             textWithBlankPosition = createTextWithBlankPosition(token);

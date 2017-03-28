@@ -12,6 +12,7 @@ public interface Dao {
     public int clearQuestionsTable(String targetID, String lChannelAccessToken);
 
     public int storeAnswer(String targetID, String lChannelAccessToken, String questionNo, String chosenAnswer, String rightAnswer);
+    public int clearAnswersTable(String targetID, String lChannelAccessToken);
 
     // GET ACTION
     public Question getQuestion(String targetID, String lChannelAccessToken, int questionNumber);

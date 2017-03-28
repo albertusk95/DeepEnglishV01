@@ -27,15 +27,18 @@ public class DistractorGenerator {
     private List<String> listOfActualNewWord;
     private List<String> listOfBlankNewWord;
 
+    private List<String> listOfActualNewWord_SHUFFLED;
+    private List<String> listOfBlankNewWord_SHUFFLED;
+
     private List<String> listOfEnglishWords;
 
     private Dao mDao;
 
 
+
     //////////////
     private String lChannelAccessToken;
     //////////////
-
 
 
 
@@ -50,6 +53,10 @@ public class DistractorGenerator {
 
         this.listOfActualNewWord = listOfActualNewWord;
         this.listOfBlankNewWord = listOfBlankNewWord;
+
+        // initialize the shuffled list for actual and blank new word
+        listOfActualNewWord_SHUFFLED = new ArrayList<String>();
+        listOfBlankNewWord_SHUFFLED = new ArrayList<String>();
 
         listOfTextToBeStoredInDB = new ArrayList<String>();
 
@@ -234,8 +241,29 @@ public class DistractorGenerator {
 
     }
 
-    // REMOVE targetID and lChannelAccessToken ! DEBUGGING PURPOSE
 
+    private void shuffleActualandBlankNewWord() {
+
+        // create a list storing the index of listOfActualNewWorld
+        List<Integer> listOfIndexActualOrBlankNewWorld = new ArrayList<Integer>();
+
+        for (int idxActOrBlank = 0; idxActOrBlank < listOfActualNewWord.size(); idxActOrBlank++) {
+            listOfIndexActualOrBlankNewWorld.add(idxActOrBlank);
+        }
+
+        // shuffle the list of index
+        Collections.shuffle(listOfIndexActualOrBlankNewWorld);
+
+        // build the shuffled list
+        for (int idxActOrBlank = 0; idxActOrBlank < listOfIndexActualOrBlankNewWorld.size(); idxActOrBlank++) {
+            listOfActualNewWord_SHUFFLED.add(listOfActualNewWord.get(listOfIndexActualOrBlankNewWorld.get(idxActOrBlank)));
+            listOfBlankNewWord_SHUFFLED.add(listOfBlankNewWord.get(listOfIndexActualOrBlankNewWorld.get(idxActOrBlank)));
+        }
+
+    }
+
+
+    // REMOVE targetID and lChannelAccessToken ! DEBUGGING PURPOSE
     public List<Integer> generateDistractor(String targetID) {
 
         int distance;
@@ -246,85 +274,82 @@ public class DistractorGenerator {
 
         Map<Integer, Integer> mapDistance;
 
+
+        // Shuffle the list of question
+        shuffleActualandBlankNewWord();
+
+
         // Clear list of index for right answer
         AnswerController.listOfIndexForRightAnswer = new ArrayList<Integer>();
 
-        // Clear the questions table in the database
-        int clearingStatus = clearQuestionsTableInDB(targetID, lChannelAccessToken);
 
-        if (clearingStatus != 0) {
+        for (int idx = 0; idx < listOfActualNewWord_SHUFFLED.size(); idx++) {
 
-            for (int idx = 0; idx < listOfActualNewWord.size(); idx++) {
+            mapDistance = new HashMap<Integer, Integer>();
 
-                mapDistance = new HashMap<Integer, Integer>();
+            // Get the similarity score
+            for (int jdx = 0; jdx < listOfEnglishWords.size(); jdx++) {
 
-                // Get the similarity score
-                for (int jdx = 0; jdx < listOfEnglishWords.size(); jdx++) {
+                distance = LD(listOfActualNewWord_SHUFFLED.get(idx), listOfEnglishWords.get(jdx));
 
-                    distance = LD(listOfActualNewWord.get(idx), listOfEnglishWords.get(jdx));
-
+                if (distance != 0) {
                     mapDistance.put(jdx, distance);
-
                 }
-
-
-                // Initialize the lost of choices (3 items)
-                listOfChoicesForThisQuestion = new ArrayList<String>();
-                //listOfChoicesForThisQuestion.add(listOfActualNewWord.get(idx));
-
-                // Get top three score which means they are the most similar word with our actual new word
-                Map<Integer, Integer> mapSorted = sortMapDistanceByValue(mapDistance);
-
-                // Initialize the counter (used to get the top three)
-                int counterForTopThree = 0;
-
-                // Loop a Map and get those three scores
-                for (Map.Entry<Integer, Integer> entry : mapSorted.entrySet()) {
-
-                    if (counterForTopThree < 3) {
-
-                        listOfChoicesForThisQuestion.add(listOfEnglishWords.get(entry.getKey()));
-
-                    } else {
-                        break;
-                    }
-
-                    counterForTopThree++;
-
-                }
-
-
-                // Get the random number as the index for the right answer
-                int idxOfRightAnswer = getIndexOfRightAnswer();
-
-
-                // Store the right answer in the array index randomly
-                arrOfChoicesForThisQuestionFINAL = randomizeTheAnswerPosition(idxOfRightAnswer, listOfActualNewWord.get(idx), listOfChoicesForThisQuestion);
-
-
-                // Store the answers index in a global variable
-                AnswerController.listOfIndexForRightAnswer.add(idxOfRightAnswer);
-
-
-                //////////////////////////
-                pushMessage(targetID, "quest no: " + (idx + 1) + ", " + idxOfRightAnswer);
-                //////////////////////////
-
-
-
-                // Store the choices in a database
-                // REMOVE TARGET ID !!!
-                int statusOfChoiceStoring = storeTheChoiceInDB(targetID, idx + 1, listOfBlankNewWord.get(idx), arrOfChoicesForThisQuestionFINAL);
-
-
-                // Store the storing status in a list (0 or 1)
-                listOfDBAccessStatus.add(statusOfChoiceStoring);
 
             }
 
-        } else {
 
-            listOfDBAccessStatus.add(clearingStatus);
+            // Initialize the lost of choices (3 items)
+            listOfChoicesForThisQuestion = new ArrayList<String>();
+            //listOfChoicesForThisQuestion.add(listOfActualNewWord.get(idx));
+
+            // Get top three score which means they are the most similar word with our actual new word
+            Map<Integer, Integer> mapSorted = sortMapDistanceByValue(mapDistance);
+
+            // Initialize the counter (used to get the top three)
+            int counterForTopThree = 0;
+
+            // Loop a Map and get those three scores
+            for (Map.Entry<Integer, Integer> entry : mapSorted.entrySet()) {
+
+                if (counterForTopThree < 3) {
+
+                    listOfChoicesForThisQuestion.add(listOfEnglishWords.get(entry.getKey()));
+
+                } else {
+                    break;
+                }
+
+                counterForTopThree++;
+
+            }
+
+
+            // Get the random number as the index for the right answer
+            int idxOfRightAnswer = getIndexOfRightAnswer();
+
+
+            // Store the right answer in the array index randomly
+            arrOfChoicesForThisQuestionFINAL = randomizeTheAnswerPosition(idxOfRightAnswer, listOfActualNewWord_SHUFFLED.get(idx), listOfChoicesForThisQuestion);
+
+
+            // Store the answers index in a global variable
+            AnswerController.listOfIndexForRightAnswer.add(idxOfRightAnswer);
+
+
+            //////////////////////////
+            //pushMessage(targetID, "quest no: " + (idx + 1) + ", " + idxOfRightAnswer);
+            //////////////////////////
+
+
+
+            // Store the choices in a database
+            // REMOVE TARGET ID !!!
+            int statusOfChoiceStoring = storeTheChoiceInDB(targetID, idx + 1, listOfBlankNewWord_SHUFFLED.get(idx), arrOfChoicesForThisQuestionFINAL);
+
+
+            // Store the storing status in a list (0 or 1)
+            listOfDBAccessStatus.add(statusOfChoiceStoring);
 
         }
 
@@ -339,23 +364,14 @@ public class DistractorGenerator {
 
 
         /////////////////////
-        pushMessage(targetID, "Inside storeTheChoiceInDB " + questionNo + ":" + theQuestion + ": choices: "
-                    + theChoices[0] + ", " + theChoices[1] + ", " + theChoices[2] + ", " + theChoices[3]);
+        //pushMessage(targetID, "Inside storeTheChoiceInDB " + questionNo + ":" + theQuestion + ": choices: "
+        //            + theChoices[0] + ", " + theChoices[1] + ", " + theChoices[2] + ", " + theChoices[3]);
         /////////////////////
 
 
         int storingStatus = mDao.storeEligibleQuestion(targetID, lChannelAccessToken, questionNo, theQuestion, theChoices);
 
         return storingStatus;
-
-    }
-
-
-    private int clearQuestionsTableInDB(String targetID, String lChannelAccessToken) {
-
-        int clearingStatus = mDao.clearQuestionsTable(targetID, lChannelAccessToken);
-
-        return clearingStatus;
 
     }
 

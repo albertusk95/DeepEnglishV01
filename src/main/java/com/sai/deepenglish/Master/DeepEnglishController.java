@@ -2,10 +2,8 @@ package com.sai.deepenglish.Master;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.ArrayList;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 import com.google.gson.Gson;
 
@@ -18,6 +16,7 @@ import com.linecorp.bot.model.message.TextMessage;
 import com.linecorp.bot.model.message.template.ButtonsTemplate;
 import com.linecorp.bot.model.profile.UserProfileResponse;
 import com.linecorp.bot.model.response.BotApiResponse;
+import com.sai.deepenglish.Classifier.MyFilteredClassifier;
 import com.sai.deepenglish.DataManager.AnswerController;
 import com.sai.deepenglish.Model.Answer;
 import de.l3s.boilerpipe.document.TextDocument;
@@ -37,12 +36,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import retrofit2.Response;
-import weka.core.Instances;
 
-//import com.sai.deepenglish.DataManager.InstancesGenerator;
-import com.sai.deepenglish.Trainer.Trainer;
-import com.sai.deepenglish.Preprocessor.QuestionPreprocessor;
-import com.sai.deepenglish.Classifier.PolarityClassifier;
 import com.sai.deepenglish.Model.Payload;
 import com.sai.deepenglish.DataManager.NewDataController;
 import com.sai.deepenglish.DataManager.DistractorGenerator;
@@ -70,6 +64,14 @@ public class DeepEnglishController {
 
 	private String displayName;
 	private Payload payload;
+
+	private Date dateStart;
+	private Date dateFinish;
+
+	private SimpleDateFormat ft;
+
+	// quizStatus 0 means the quiz is not running
+	private int quizStatus = 0;
 
 
 	@RequestMapping(value="/callback", method= RequestMethod.POST)
@@ -127,10 +129,17 @@ public class DeepEnglishController {
 			// Parsing message from user
 			if (!payload.events[0].message.type.equals("text")){
 
-				// If the message is not a text (image, sticker, etc), just send a greeting message
-				//greetingMessage();
+				if (quizStatus == 0) {
 
-				replyToUser(payload.events[0].replyToken, payload.events[0].replyToken + " Hello Group! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill.");
+					// If the message is not a text (image, sticker, etc), just send a greeting message
+					greetingMessage();
+
+				} else {
+
+					// quiz is running. I don't recognize the request. Try it later.
+					runningQuizNotification(idTarget);
+
+				}
 
 			} else {
 
@@ -146,25 +155,61 @@ public class DeepEnglishController {
 
 						if (isValidURLText(msgText)) {
 
-							// Category 1: Link
-							String linkContent = processLinkContent(idTarget);
-							processText_ARTICLE_BODY(idTarget, linkContent);
+							if (quizStatus == 0) {
+
+								// Category 1: Link
+								String linkContent = processLinkContent(idTarget);
+								processText_ARTICLE_BODY(idTarget, linkContent);
+
+							} else {
+
+								// quiz is running
+								runningQuizNotification(idTarget);
+
+							}
 
 						} else {
 
 							if (!msgText.contains("[start the quiz]")) {
 
 								// Check whether it's an article's body based on the message length
-								if (msgTextLength > 5) {
+								if (msgTextLength > 50) {
 
-									// Category 2: Article's body
-									processText_ARTICLE_BODY(idTarget, payload.events[0].message.text);
+									// CONSIDERATION:
+									// Hi, your text is more than 50 chars. I consider it as a new request for the quiz.
+
+									if (quizStatus == 0) {
+
+										// Category 2: Article's body
+										processText_ARTICLE_BODY(idTarget, payload.events[0].message.text);
+
+									} else {
+
+										// quiz is still running
+										runningQuizNotification(idTarget);
+
+									}
 
 								} else {
 
 									// Other categories
 									try {
-										handleOtherCategories(msgText, payload, idTarget);
+
+										if (quizStatus == 0) {
+
+											handleOtherCategories(msgText, idTarget);
+
+										} else {
+
+											// CONSIDERATION:
+											// Hi, the quiz is running and I don't recognize your request. Try to send it back when
+											// the quis is not at the running state
+
+											// quiz is still running
+											runningQuizNotification(idTarget);
+
+										}
+
 									} catch (IOException e) {
 										System.out.println("Exception is raised ");
 										e.printStackTrace();
@@ -174,8 +219,20 @@ public class DeepEnglishController {
 
 							} else {
 
-								// Retrieve and show the first question
-								retrieveAndShowTheQuestion(idTarget, 1);
+								if (quizStatus == 0) {
+
+									// Initialize the timer
+									initializeTimer(idTarget);
+
+									// Retrieve and show the first question
+									retrieveAndShowTheQuestion(idTarget, 1);
+
+								} else {
+
+									// quiz is still running
+									runningQuizNotification(idTarget);
+
+								}
 
 							}
 
@@ -188,11 +245,19 @@ public class DeepEnglishController {
 						// Get the question number
 						// Answer template: No.<QUESTION_NO><SPACE>[your answer]: [ A ] desc...
 
-						// Get No.<QUESTION_NO> and the answer
-						String[] answerTemplateSplitted = msgText.split("\\s+");
+						if (quizStatus == 1) {
 
-						processText_ANSWER(idTarget, answerTemplateSplitted[0], answerTemplateSplitted[4]);
+							// Get No.<QUESTION_NO> and the answer
+							String[] answerTemplateSplitted = msgText.split("\\s+");
 
+							processText_ANSWER(idTarget, answerTemplateSplitted[0], answerTemplateSplitted[4]);
+
+						} else {
+
+							// quiz is not running
+							notRunningQuizNotification(idTarget);
+
+						}
 					}
 
 				} else {
@@ -261,15 +326,20 @@ public class DeepEnglishController {
 		String pathToAllResources = "data/";
 
 		// the location of the original training data
-		String pathToOriginalTrainingData = "data/original_data/data_original_blank.txt";
+		//String pathToOriginalTrainingData = "data/original_data/data_original_blank.txt";
 
 		// the location of the file of instances
-		String pathToFileOfInstances = "data/tagged_data/data_instances_tagged.txt";
+		//String pathToFileOfInstances = "data/tagged_data/data_instances_tagged.txt";
 
 		// the location of the final training data
 		//String pathToFinalTrainingData = "data/train/data_instances_tagged_custom_100.arff";
 
-		/* PHASE 0 - INSTANCES GENERATION FOR TRAINING DATA - DONE
+
+		/////////////////////////////////////////////////////////
+		// INSTANCE GENERATOR (USED ONLY WHEN NEEDED)
+		/////////////////////////////////////////////////////////
+
+		/*
 		// retrieve the list of the original data
 		List<String> listOfOriginData;
 
@@ -280,24 +350,47 @@ public class DeepEnglishController {
 		*/
 
 
-		// INSTANCES GENERATION FOR TESTING DATA
+		/////////////////////////////////////////////////////////
+		// LEARNING (USED ONLY WHEN NEEDED)
+		/////////////////////////////////////////////////////////
+
+		/*
+		MyFilteredLearner learner = new MyFilteredLearner();
+
+		learner.loadDataset(pathToAllResources + "train/data_instances_tagged_custom_text_100.arff");
+
+		// Evaluation mus be done before training
+		learner.evaluate();
+		learner.learn();
+		learner.saveModel(pathToAllResources + "models/data_text_100.model");
+		*/
+
+
+		/////////////////////////////////////////////////////////
+		// INSTANCES GENERATOR FOR TESTING DATA
+		/////////////////////////////////////////////////////////
+
 		NewDataController ndc = new NewDataController(dataTest);
 		ndc.generateInstances();
 
 		List<String> listOfActualNewDataToBeTested = ndc.getListOfActualNewData();
 		List<String> listOfBlankNewDataToBeTested = ndc.getListOfBlankNewData();
 
+		// List of eligible questions
 		List<String> listOfEligibleNewData_ACTUAL = new ArrayList<String>();
 		List<String> listOfEligibleNewData_BLANK = new ArrayList<String>();
+
+		// List of eligible questions which are sorted by the prediction score
 
 
 		/* PHASE 1 - WORK IN PROGRESS */
 		// start training
-		Trainer tr = new Trainer(pathToAllResources);
+		//Trainer tr = new Trainer(pathToAllResources);
 		//tr.train();
 
 
 		/* PHASE 2 - CLASSIFY TRUE OR FALSE */
+		/*
 		PolarityClassifier pc = new PolarityClassifier(pathToAllResources, tr.getTextAttributes(), tr.getComplexAttributes());
 
 		QuestionPreprocessor qp = new QuestionPreprocessor(pathToAllResources);
@@ -330,12 +423,40 @@ public class DeepEnglishController {
 			}
 
 		}
+		*/
+
+
+		/////////////////////////////////////////////////////////
+		// CLASSIFYING
+		/////////////////////////////////////////////////////////
+
+		MyFilteredClassifier classifier = new MyFilteredClassifier();
+		classifier.loadModel(pathToAllResources + "models/data_text_100.model");
+
+		String predClassify;
+
+		for (int idx = 0; idx < listOfBlankNewDataToBeTested.size(); idx++) {
+
+			classifier.setDataTest(listOfBlankNewDataToBeTested.get(idx));
+
+			classifier.makeInstance();
+
+			predClassify = classifier.classify();
+
+			// Pass the sentence having true label to the Distractor Generator
+			if (predClassify.equals("1")) {
+				listOfEligibleNewData_ACTUAL.add(listOfActualNewDataToBeTested.get(idx));
+				listOfEligibleNewData_BLANK.add(listOfBlankNewDataToBeTested.get(idx));
+			}
+
+		}
+
 
 		// HANDLER for the case when the size of the true label is 0?
 		if (listOfEligibleNewData_ACTUAL.size() != 0) {
 
 
-			pushMessage(targetID, "I've got " + listOfEligibleNewData_ACTUAL.size() + " eligible questions!");
+			pushMessage(targetID, "Hi! I've got " + listOfEligibleNewData_ACTUAL.size() + " eligible questions!");
 
 
 			List<Integer> listOfDBAccessStatus = generateDistractor(targetID, listOfEligibleNewData_ACTUAL, listOfEligibleNewData_BLANK);
@@ -390,7 +511,7 @@ public class DeepEnglishController {
 		// --------------------------------------------------------
 
 		//////////////////////////////
-		pushMessage(targetID, "CHECK ANSWER: " + actualQuestNo + " : " + chosenAnswer);
+		//pushMessage(targetID, "CHECK ANSWER: " + actualQuestNo + " : " + chosenAnswer);
 		//////////////////////////////
 
 		// CHECK THE ANSWER
@@ -399,6 +520,7 @@ public class DeepEnglishController {
 
 		// set mDao
 		ac.setDao(mDao);
+
 
 		// check the result
 		//int answerValue = ac.checkAnswer();
@@ -422,22 +544,57 @@ public class DeepEnglishController {
 
 		String pathToAllEnglishWords = "data/english_dict/words.txt";
 
-		DistractorGenerator dg = new DistractorGenerator(lChannelAccessToken, pathToAllEnglishWords, listOfEligibleActualNewData, listOfEligibleBlankNewData);
-
-		// set mDao
-		dg.setDao(mDao);
-
-		// retrieve and set up all english words
-		List<String> listOfEnglishWords = dg.retrieveAllEnglishWords();
-		dg.setListOfEnglishWords(listOfEnglishWords);
+		List<Integer> listOfDBAccessStatus;
 
 
-		pushMessage(targetID, "Successfully set list of english words: " + listOfEnglishWords.size() + ", " + listOfEligibleBlankNewData.size());
+		// Clear the questions table
+		int clearingQuestTableStatus = clearQuestionsTable(targetID);
+
+		if (clearingQuestTableStatus == 1) {
+
+			DistractorGenerator dg = new DistractorGenerator(lChannelAccessToken, pathToAllEnglishWords, listOfEligibleActualNewData, listOfEligibleBlankNewData);
+
+			// set mDao
+			dg.setDao(mDao);
+
+			// retrieve and set up all english words
+			List<String> listOfEnglishWords = dg.retrieveAllEnglishWords();
+			dg.setListOfEnglishWords(listOfEnglishWords);
 
 
-		List<Integer> listOfDBAccessStatus = dg.generateDistractor(targetID);
+			pushMessage(targetID, "Successfully set list of english words: " + listOfEnglishWords.size() + ", " + listOfEligibleBlankNewData.size());
+
+
+			listOfDBAccessStatus = dg.generateDistractor(targetID);
+
+		} else {
+
+			listOfDBAccessStatus = new ArrayList<Integer>();
+			listOfDBAccessStatus.add(clearingQuestTableStatus);
+
+		}
 
 		return listOfDBAccessStatus;
+
+	}
+
+
+	// Method for initializing questions table
+	private int clearQuestionsTable(String targetID) {
+
+		int clearingQuestTableStatus = mDao.clearQuestionsTable(targetID, lChannelAccessToken);
+
+		return clearingQuestTableStatus;
+
+	}
+
+
+	// Method for initializing answers table
+	private int clearAnswersTable(String targetID) {
+
+		int clearingAnsTableStatus = mDao.clearAnswersTable(targetID, lChannelAccessToken);
+
+		return clearingAnsTableStatus;
 
 	}
 
@@ -445,72 +602,152 @@ public class DeepEnglishController {
 	private void retrieveAndShowTheQuestion(String targetID, int questionNumber) {
 
 
-
 		//////////////////////////
-		pushMessage(targetID, "Inside retrieveAndShowTheQuestion: " + questionNumber);
+		//pushMessage(targetID, "Inside retrieveAndShowTheQuestion: " + questionNumber);
 		//////////////////////////
 
 
-		QuestionController qc = new QuestionController(questionNumber);
+		int clearingAnsTableStatus = 1;
 
-		// set mDao
-		qc.setDao(mDao);
+		// If the question number is 1, clear the answers table
+		if (questionNumber == 1) {
+			clearingAnsTableStatus = clearAnswersTable(targetID);
+		}
 
-		// retrieve question with number <questionNumber>
+		if (clearingAnsTableStatus == 1) {
 
-		// REMOVE THE TWO PARAMETERS !!!
-		Question retrievedQuestion = qc.retrieveQuestion(targetID, lChannelAccessToken);
+			QuestionController qc = new QuestionController(questionNumber);
+
+			// set mDao
+			qc.setDao(mDao);
+
+			// retrieve question with number <questionNumber>
+
+			// REMOVE THE TWO PARAMETERS !!!
+			Question retrievedQuestion = qc.retrieveQuestion(targetID, lChannelAccessToken);
 
 
-		// Check if the whole questions are already shown
-		if (retrievedQuestion == null) {
+			// Check if the whole questions are already shown
+			if (retrievedQuestion == null) {
 
-			// Send a push message notifying that the quiz is finished
-			pushMessage(targetID, "You've answered all the questions! Thank you.");
+				// Send a push message notifying that the quiz is finished
+				pushMessage(targetID, "You've answered all the questions! Thank you.");
 
-			// Show the result
-			showTheQuizResult(targetID);
+				// Show the result
+				showTheQuizResult(targetID);
+
+			} else {
+
+				// Question and answer text
+				String questionAndAnswer = "[Question " + String.valueOf(questionNumber) + "]\n\n";
+				questionAndAnswer = questionAndAnswer + retrievedQuestion.getQuestion() + "\n\n";
+				questionAndAnswer = questionAndAnswer + "[Answers]:" + "\n\n";
+				questionAndAnswer = questionAndAnswer + "[ A ] " + retrievedQuestion.getChoiceZero() + "\n";
+				questionAndAnswer = questionAndAnswer + "[ B ] " + retrievedQuestion.getChoiceOne() + "\n";
+				questionAndAnswer = questionAndAnswer + "[ C ] " + retrievedQuestion.getChoiceTwo() + "\n";
+				questionAndAnswer = questionAndAnswer + "[ D ] " + retrievedQuestion.getChoiceThree();
+
+
+				// Label answer: A, B, C, D
+				String[] labelAnswer = new String[4];
+				labelAnswer[0] = "A";
+				labelAnswer[1] = "B";
+				labelAnswer[2] = "C";
+				labelAnswer[3] = "D";
+
+
+				// Answer template: No.<questionNo><SPACE>[your_answer]: A
+				String[] actionAnswer = new String[4];
+				actionAnswer[0] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ A ] " + retrievedQuestion.getChoiceZero();
+				actionAnswer[1] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ B ] " + retrievedQuestion.getChoiceOne();
+				actionAnswer[2] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ C ] " + retrievedQuestion.getChoiceTwo();
+				actionAnswer[3] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ D ] " + retrievedQuestion.getChoiceThree();
+
+
+				// Show the button template so that user can choose his/her answer
+				String questionMsg = "Choose your answer";
+				String title = "Answer";
+
+
+				// Show the question and answer
+				pushMessage(targetID, questionAndAnswer);
+
+				// Show the answer button template
+				buttonTemplate(questionMsg, labelAnswer, actionAnswer, title);
+
+			}
 
 		} else {
 
-			// Question and answer text
-			String questionAndAnswer = "[Question " + String.valueOf(questionNumber) + "]\n\n";
-			questionAndAnswer = questionAndAnswer + retrievedQuestion.getQuestion() + "\n\n";
-			questionAndAnswer = questionAndAnswer + "[Answers]:" + "\n\n";
-			questionAndAnswer = questionAndAnswer + "[ A ] " + retrievedQuestion.getChoiceZero() + "\n";
-			questionAndAnswer = questionAndAnswer + "[ B ] " + retrievedQuestion.getChoiceOne() + "\n";
-			questionAndAnswer = questionAndAnswer + "[ C ] " + retrievedQuestion.getChoiceTwo() + "\n";
-			questionAndAnswer = questionAndAnswer + "[ D ] " + retrievedQuestion.getChoiceThree();
-
-
-			// Label answer: A, B, C, D
-			String[] labelAnswer = new String[4];
-			labelAnswer[0] = "A";
-			labelAnswer[1] = "B";
-			labelAnswer[2] = "C";
-			labelAnswer[3] = "D";
-
-
-			// Answer template: No.<questionNo><SPACE>[your_answer]: A
-			String[] actionAnswer = new String[4];
-			actionAnswer[0] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ A ] " + retrievedQuestion.getChoiceZero();
-			actionAnswer[1] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ B ] " + retrievedQuestion.getChoiceOne();
-			actionAnswer[2] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ C ] " + retrievedQuestion.getChoiceTwo();
-			actionAnswer[3] = "No." + String.valueOf(questionNumber) + " " + "[your answer]: [ D ] " + retrievedQuestion.getChoiceThree();
-
-
-			// Show the button template so that user can choose his/her answer
-			String questionMsg = "Choose your answer";
-			String title = "Answer";
-
-
-			// Show the question and answer
-			pushMessage(targetID, questionAndAnswer);
-
-			// Show the answer button template
-			buttonTemplate(questionMsg, labelAnswer, actionAnswer, title);
+			pushMessage(targetID, "Sorry, there was an error in accessing database [clear: table answers]");
 
 		}
+	}
+
+
+	// Method for timer initialization
+	private void initializeTimer(String targetID) {
+
+		dateStart = new Date();
+
+
+		/////////////////
+		//pushMessage(targetID, "Inside initializeTimer");
+		/////////////////
+
+
+		// HH converts hour in 24 hours format (0-23), day calculation
+		ft = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss");
+
+		try {
+
+			// Get the start date
+			dateStart = ft.parse(ft.format(dateStart));
+
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
+
+
+		/////////////////
+		//pushMessage(targetID, "date start: " + dateStart);
+		/////////////////
+
+
+	}
+
+	// Method for computing the time difference elements
+	private List<Long> getListOfTimeDiffElements() {
+
+		List<Long> listOfTimeDiffElements = new ArrayList<Long>();
+
+		// HH converts hour in 24 hours format (0-23), day calculation
+		dateFinish = new Date();
+
+		ft = new SimpleDateFormat("MM/dd/yyyy HH:mm:ss");
+
+		try {
+
+			dateFinish = ft.parse(ft.format(dateFinish));
+
+			// Compute the difference in milliseconds
+			long diff = dateFinish.getTime() - dateStart.getTime();
+
+			long diffSeconds = diff / 1000 % 60;
+			long diffMinutes = diff / (60 * 1000) % 60;
+			long diffHours = diff / (60 * 60 * 1000) % 24;
+			long diffDays = diff / (24 * 60 * 60 * 1000);
+
+			listOfTimeDiffElements.add(diffDays);
+			listOfTimeDiffElements.add(diffHours);
+			listOfTimeDiffElements.add(diffMinutes);
+			listOfTimeDiffElements.add(diffSeconds);
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+		return listOfTimeDiffElements;
 
 	}
 
@@ -521,16 +758,49 @@ public class DeepEnglishController {
 
 		// send a push message notifying the quiz result
 		String quizResult = "";
-		quizResult = quizResult + "[Quiz result]\n\n";
-		quizResult = quizResult + "(No, Your Answer, Right Answer)\n";
-		quizResult = quizResult + "-------------------------------\n\n";
+
+		quizResult = quizResult + "[QUIZ RESULT]";
+
+		// create the final score
+		int countCorrectAns = 0;
 
 		for (Answer ans : answerHistory) {
 
-			quizResult = quizResult + "(" + ans.getQuestionNo() + ", " + ans.getChosenAnswer() + ", " + ans.getRightAnswer() + ")\n";
+			if (ans.getChosenAnswer().toLowerCase().equals(ans.getRightAnswer().toLowerCase())) {
+				countCorrectAns++;
+			}
 
 		}
 
+		quizResult = quizResult + "\n\n";
+		quizResult = quizResult + "[Number of Correct Answers]\n";
+		quizResult = quizResult + "---------------------------\n";
+		quizResult = quizResult + String.valueOf(countCorrectAns);
+
+		// create the time needed from start to finish
+		List<Long> listOfTimeDiffElements = getListOfTimeDiffElements();
+
+		quizResult = quizResult + "\n\n";
+		quizResult = quizResult + "[Completion Time]\n";
+		quizResult = quizResult + "-----------------\n";
+		quizResult = quizResult + listOfTimeDiffElements.get(0) + " days, ";
+		quizResult = quizResult + listOfTimeDiffElements.get(1) + " hours, ";
+		quizResult = quizResult + listOfTimeDiffElements.get(2) + " minutes, ";
+		quizResult = quizResult + listOfTimeDiffElements.get(3) + " seconds";
+
+		quizResult = quizResult + "\n\n";
+		quizResult = quizResult + "[Answer History]\n";
+		quizResult = quizResult + "---------------------------------\n";
+		quizResult = quizResult + "(No, Your Answer, Correct Answer)\n";
+		quizResult = quizResult + "---------------------------------\n\n";
+
+		for (Answer ans : answerHistory) {
+
+			quizResult = quizResult + "(" + ans.getQuestionNo() + ",   " + ans.getChosenAnswer().toUpperCase() + ",   " + ans.getRightAnswer() + ")\n";
+
+		}
+
+		// Send as a push message
 		pushMessage(targetID, quizResult);
 
 	}
@@ -571,6 +841,42 @@ public class DeepEnglishController {
 
 	}
 
+
+	// Method for notifying that the quiz is currently running and providing an option to see the rules
+	private void runningQuizNotification(String targetID) {
+
+		//getUserProfile(payload.events[0].source.userId);
+
+		String title = "Quiz State";
+		String runningQuizMsg = "Hi, the quiz is currently running now. You can see the rules by clicking the button below.";
+		String label[] = new String[1];
+		label[0] = "Read the Rules";
+
+		String action[] = new String[1];
+		action[1] = "[read the rules]";
+
+		buttonTemplate(runningQuizMsg, label, action, title);
+
+	}
+
+
+	// Method for noityfing that the quiz is currently not running
+	private void notRunningQuizNotification(String targetID) {
+
+		//getUserProfile(payload.events[0].source.userId);
+
+		String title = "Quiz State";
+		String notRunningQuizMsg = "Hi, the quiz is currently not running now. You can see the rules by clicking the button below.";
+		String label[] = new String[1];
+		label[0] = "Read the Rules";
+
+		String action[] = new String[1];
+		action[1] = "[read the rules]";
+
+		buttonTemplate(notRunningQuizMsg, label, action, title);
+
+	}
+
 	// Method for pushing message
 	private void pushMessage(String sourceId, String txt) {
 
@@ -600,7 +906,7 @@ public class DeepEnglishController {
 
 		getUserProfile(payload.events[0].source.userId);
 
-		String greetingMsg = "Hi " + displayName + "! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill. Let's learn together!" + payload.events[0].replyToken;
+		String greetingMsg = "Hi " + displayName + "! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill. Let's learn together!";
 
 		String[] label = new String[1];
 		label[0] = "Read the Rules";
@@ -639,8 +945,19 @@ public class DeepEnglishController {
 	}
 
 
+	// Method for setting current status of the quiz
+	private void setQuizStatus(int qStatus) {
+
+		quizStatus = qStatus;
+
+	}
+
+
 	// Method for sending message as a notification to start the quiz
 	private void startTheQuizMessage() {
+
+		// set the quiz status to 1 (running)
+		setQuizStatus(1);
 
 		String greetingMsg = "Thank you for the resource. I'd successfully generated several questions based on the resource you submitted. Just click the button below to start the quiz.";
 
@@ -658,20 +975,19 @@ public class DeepEnglishController {
 
 
 	// Method for handling other categories
-	private void handleOtherCategories(String userTxt, Payload ePayload, String targetID) throws IOException {
+	private void handleOtherCategories(String userTxt, String targetID) throws IOException {
 
-		/*
-		if (userTxt.equals("lihat daftar event")){
-			pushMessage(targetID, "Aku akan mencarikan event aktif di dicoding! Dengan syarat : Kasih tau dong LINE ID kamu (pake \'id @\' ya). Contoh :");
-			pushMessage(targetID, "id @john");
+		if (userTxt.contains("end quiz")) {
+
+			// set the quiz status to 0 (stop)
+			setQuizStatus(0);
+
+			// finish the quiz and show the result
+			replyToUser(payload.events[0].replyToken, "As you wish. Ending the quiz. Done.");
+
+			showTheQuizResult(targetID);
+
 		}
-		else if (userTxt.contains("summary")){
-			pushMessage(targetID, event.getData().get(Integer.parseInt(String.valueOf(userTxt.charAt(1)))-1).getSummary());
-		} else {
-			pushMessage(targetID, "Hi "+displayName+", aku belum  mengerti maksud kamu. Silahkan ikuti petunjuk ya :)");
-			greetingMessage();
-		}
-		*/
 
 	}
 
@@ -681,7 +997,7 @@ public class DeepEnglishController {
 
 		ButtonsTemplate buttonsTemplate;
 
-		if (title.equals("Welcome") || title.equals("Start the Quiz")) {
+		if (title.equals("Welcome") || title.equals("Start the Quiz") || title.equals("Quiz State")) {
 
 			buttonsTemplate = new ButtonsTemplate(null, null, message,
 					Arrays.asList(new MessageAction(label[0], action[0])));

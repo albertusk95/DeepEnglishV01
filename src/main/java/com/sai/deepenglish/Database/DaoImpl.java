@@ -38,13 +38,16 @@ public class DaoImpl implements Dao {
     // Query for questions table
     private final static String SQL_SELECT_ALL_QUESTION = "SELECT id, question_no, question, choice_zero, choice_one, choice_two, choice_three FROM questions_table";
     private final static String SQL_STORE_QUESTION = "INSERT INTO questions_table (question_no, question, choice_zero, choice_one, choice_two, choice_three) VALUES (?, ?, ?, ?, ?, ?);";
-    private final static String SQL_CLEAR_QUESTIONS_TABLE = "DELETE FROM questions_table";
+    private final static String SQL_CLEAR_QUESTIONS_TABLE = "DELETE FROM questions_table;";
     private final static String SQL_GET_QUESTION_BY_NUMBER = SQL_SELECT_ALL_QUESTION + " WHERE LOWER(question_no) LIKE LOWER(?);";
 
     // Query for answers table
     private final static String SQL_SELECT_ALL_ANSWER = "SELECT id, question_no, chosen_answer, right_answer FROM answers_table;";
     private final static String SQL_STORE_ANSWER = "INSERT INTO answers_table (question_no, chosen_answer, right_answer) VALUES (?, ?, ?);";
+    private final static String SQL_CLEAR_ANSWERS_TABLE = "DELETE FROM answers_table;";
 
+    private final static String SQL_SELECT_ALL_ANSWER_FOR_GET = "SELECT id, question_no, chosen_answer, right_answer FROM answers_table";
+    private final static String SQL_GET_ANSWERS_BY_NUMBER = SQL_SELECT_ALL_ANSWER_FOR_GET + " WHERE LOWER(question_no) LIKE LOWER(?);";
 
     private JdbcTemplate mJdbc;
 
@@ -143,8 +146,8 @@ public class DaoImpl implements Dao {
 
 
         ///////////////////////////////////////
-        pushMessage(targetID, lChannelAccessToken, questionNumber + " : " + theQuestion + " : "
-                    + theChoices[0] + " : " + theChoices[1] + " : " + theChoices[2] + " : " + theChoices[3]);
+        //pushMessage(targetID, lChannelAccessToken, questionNumber + " : " + theQuestion + " : "
+        //            + theChoices[0] + " : " + theChoices[1] + " : " + theChoices[2] + " : " + theChoices[3]);
         ///////////////////////////////////////
 
 
@@ -155,14 +158,13 @@ public class DaoImpl implements Dao {
     // Clear the questions table
     public int clearQuestionsTable(String targetID, String lChannelAccessToken) {
 
-
         if (mJdbc.query(SQL_GET_QUESTION_BY_NUMBER, new Object[]{"'" + String.valueOf(1) + "'"}, MULTIPLE_RS_EXTRACTOR_QUESTION) != null) {
         //if (mJdbc.query(SQL_GET_QUESTION_BY_NUMBER, new Object[]{"'" + String.valueOf(1) + "'"}, SINGLE_RS_EXTRACTOR_QUESTION) != null) {
 
             // not empty
 
             ///////////////////////////////////////
-            pushMessage(targetID, lChannelAccessToken, "TABLE IS NOT EMPTY");
+            pushMessage(targetID, lChannelAccessToken, "TABLE QUESTIONS IS NOT EMPTY");
             ///////////////////////////////////////
 
             return mJdbc.update(SQL_CLEAR_QUESTIONS_TABLE);
@@ -172,7 +174,7 @@ public class DaoImpl implements Dao {
         // already empty
 
         ///////////////////////////////////////
-        pushMessage(targetID, lChannelAccessToken, "TABLE IS EMPTY");
+        pushMessage(targetID, lChannelAccessToken, "TABLE QUESTIONS IS EMPTY");
         ///////////////////////////////////////
 
         return 1;
@@ -186,6 +188,30 @@ public class DaoImpl implements Dao {
 
     }
 
+    // Clear answers table
+    public int clearAnswersTable(String targetID, String lChannelAccessToken) {
+
+        if (mJdbc.query(SQL_GET_ANSWERS_BY_NUMBER, new Object[]{"'" + String.valueOf(1) + "'"}, MULTIPLE_RS_EXTRACTOR_ANSWER) != null) {
+
+            // not empty
+
+            ///////////////////////////////////////
+            pushMessage(targetID, lChannelAccessToken, "TABLE ANSWERS IS NOT EMPTY");
+            ///////////////////////////////////////
+
+            return mJdbc.update(SQL_CLEAR_ANSWERS_TABLE);
+
+        }
+
+        // already empty
+
+        ///////////////////////////////////////
+        pushMessage(targetID, lChannelAccessToken, "TABLE ANSWERS IS EMPTY");
+        ///////////////////////////////////////
+
+        return 1;
+
+    }
 
     // Retrieve the questions with number <questionNumber>
     public Question getQuestion(String targetID, String lChannelAccessToken, int questionNumber) {

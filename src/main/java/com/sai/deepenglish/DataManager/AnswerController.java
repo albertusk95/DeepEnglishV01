@@ -87,14 +87,14 @@ public class AnswerController {
     public int storeAnswerInDB() {
 
         /////////////////////
-        pushMessage(targetID, "listOfIdxRight: " + listOfIndexForRightAnswer.get(Integer.parseInt(questionNo) - 1));
+        //pushMessage(targetID, "listOfIdxRight: " + listOfIndexForRightAnswer.get(Integer.parseInt(questionNo) - 1));
         /////////////////////
 
         int idxOfRightAnswer = listOfIndexForRightAnswer.get(Integer.parseInt(questionNo) - 1);
 
 
         /////////////////////
-        pushMessage(targetID, "PASSED");
+        //pushMessage(targetID, "PASSED");
         /////////////////////
 
 
@@ -102,7 +102,7 @@ public class AnswerController {
 
 
         /////////////////////
-        pushMessage(targetID, "idxRightAnswer: " + idxOfRightAnswer + ", status: " + storingAnswerStatus);
+        //pushMessage(targetID, "idxRightAnswer: " + idxOfRightAnswer + ", status: " + storingAnswerStatus);
         /////////////////////
 
 

@@ -112,12 +112,18 @@ public class PolarityClassifier {
 		
 		double[] hc = applyHC();		// applies the HC and returns the results
 		
-		double content_true_vals = (hc[1]+hc[3])/62.02;
-		double content_false_vals = (hc[0]+hc[2])/62.02;
-		double hc_val = (1 + content_true_vals - content_false_vals) / 2;
-		
+		//double content_true_vals = (hc[1]+hc[3])/62.02;
+		//double content_false_vals = (hc[0]+hc[2])/62.02;
+		//double hc_val = (1 + content_true_vals - content_false_vals) / 2;
+
+		double content_true_vals = (hc[1]+hc[3])/2;
+		double content_false_vals = (hc[0]+hc[2])/2;
+
+
+
 		String output = "";
-		
+
+		/*
 		if (hc_val < 0.5) {
 			output = "0";
 		} else if (hc_val > 0.5) {
@@ -127,7 +133,18 @@ public class PolarityClassifier {
 		}
 		
 		predictionCertainty = hc_val;
-		
+		*/
+
+		predictionCertainty = 0;
+
+		if (content_true_vals < content_false_vals) {
+			output = "0";
+			predictionCertainty = content_false_vals;
+		} else {
+			output = "1";
+			predictionCertainty = content_true_vals;
+		}
+
 		return output;
 	
 	}
@@ -167,18 +184,24 @@ public class PolarityClassifier {
 			
 			if (i == 0) {
 				
-				scores[0] = preds[0]*31.07;
-				scores[1] = preds[1]*31.07;
-				
+				//scores[0] = preds[0]*31.07;
+				//scores[1] = preds[1]*31.07;
+
+				scores[0] = preds[0];
+				scores[1] = preds[1];
+
 				// add the class distribution into list of class distribution for text
 				System.out.println("text false (0): " + preds[0]);
 				System.out.println("text true (1): " + preds[1]);
 				
 			} else {
 				
-				scores[2] = preds[0]*30.95;
-				scores[3] = preds[1]*30.95;
-				
+				//scores[2] = preds[0]*30.95;
+				//scores[3] = preds[1]*30.95;
+
+				scores[2] = preds[0];
+				scores[3] = preds[1];
+
 				// add the class distribution into list of class distribution for complex
 				System.out.println("complex false (0): " + preds[0]);
 				System.out.println("complex true (1): " + preds[1]);
