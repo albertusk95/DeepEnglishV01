@@ -13,6 +13,8 @@ public class QuestionController {
 
     private int questionNumber;
 
+    private String idTarget;
+
 
     public QuestionController(int questionNumber) {
 
@@ -25,10 +27,13 @@ public class QuestionController {
         this.mDao = mDao;
     }
 
+    public void setIdTarget(String idTarget) {
+        this.idTarget = idTarget;
+    }
 
     public Question retrieveQuestion(String targetID, String lChannelAccessToken) {
 
-        Question retrievedQuestion = mDao.getQuestion(targetID, lChannelAccessToken, questionNumber);
+        Question retrievedQuestion = mDao.getQuestion(targetID, lChannelAccessToken, idTarget, questionNumber);
         return retrievedQuestion;
 
     }

@@ -23,6 +23,7 @@ public class AnswerController {
     private String targetID;
     private String lChannelAccessToken;
 
+    private String idTarget;
 
     public AnswerController(String targetID, String lChannelAccessToken, String questionNo, String chosenAnswer) {
 
@@ -37,6 +38,10 @@ public class AnswerController {
 
     public void setDao(Dao mDao) {
         this.mDao = mDao;
+    }
+
+    public void setIdTarget(String idTarget) {
+        this.idTarget = idTarget;
     }
 
     private String getAnswerInStr(int idxOfRightAnswer) {
@@ -98,7 +103,7 @@ public class AnswerController {
         /////////////////////
 
 
-        int storingAnswerStatus = mDao.storeAnswer(targetID, lChannelAccessToken, questionNo, chosenAnswer, getAnswerInStr(idxOfRightAnswer));
+        int storingAnswerStatus = mDao.storeAnswer(targetID, lChannelAccessToken, idTarget, questionNo, chosenAnswer, getAnswerInStr(idxOfRightAnswer));
 
 
         /////////////////////

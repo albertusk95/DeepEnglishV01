@@ -34,7 +34,7 @@ public class DistractorGenerator {
 
     private Dao mDao;
 
-
+    private String idTarget;
 
     //////////////
     private String lChannelAccessToken;
@@ -71,6 +71,10 @@ public class DistractorGenerator {
 
     public  void setDao (Dao mDao) {
         this.mDao = mDao;
+    }
+
+    public void setIdTarget(String idTarget) {
+        this.idTarget = idTarget;
     }
 
     public List<String> retrieveAllEnglishWords() {
@@ -337,6 +341,10 @@ public class DistractorGenerator {
             AnswerController.listOfIndexForRightAnswer.add(idxOfRightAnswer);
 
 
+            // EXPERIMENNT FOR listOfIndexForRightAnswer - Store the values in database
+
+
+
             //////////////////////////
             //pushMessage(targetID, "quest no: " + (idx + 1) + ", " + idxOfRightAnswer);
             //////////////////////////
@@ -369,7 +377,7 @@ public class DistractorGenerator {
         /////////////////////
 
 
-        int storingStatus = mDao.storeEligibleQuestion(targetID, lChannelAccessToken, questionNo, theQuestion, theChoices);
+        int storingStatus = mDao.storeEligibleQuestion(targetID, lChannelAccessToken, idTarget, questionNo, theQuestion, theChoices);
 
         return storingStatus;
 

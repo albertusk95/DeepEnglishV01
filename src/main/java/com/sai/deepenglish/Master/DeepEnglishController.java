@@ -19,6 +19,8 @@ import com.linecorp.bot.model.response.BotApiResponse;
 import com.sai.deepenglish.Classifier.MyFilteredClassifier;
 import com.sai.deepenglish.DataManager.AnswerController;
 import com.sai.deepenglish.Model.Answer;
+import com.sai.deepenglish.Spider.Spider;
+import com.sai.deepenglish.Summariser.TextSummariser;
 import de.l3s.boilerpipe.document.TextDocument;
 import de.l3s.boilerpipe.extractors.CommonExtractors;
 import de.l3s.boilerpipe.sax.BoilerpipeSAXInput;
@@ -75,6 +77,8 @@ public class DeepEnglishController {
 
 	private String quizNotification;
 
+	private String idTarget = " ";
+
 
 	@RequestMapping(value="/callback", method= RequestMethod.POST)
 	public ResponseEntity<String> callback(@RequestBody String aPayload) {
@@ -91,7 +95,6 @@ public class DeepEnglishController {
 
 		// Variable initialization
 		String msgText = " ";
-		String idTarget = " ";
 		String eventTypeDetails;
 		String eventType = payload.events[0].type;
 		int msgTextLength;
@@ -150,123 +153,236 @@ public class DeepEnglishController {
 				msgText = msgText.toLowerCase();
 				msgTextLength = msgText.length();
 
-				// Check whether the user asks the bot to leave the chat room
-				if (!msgText.contains("bot leave")) {
 
-					// Check the message's category
-					if (!msgText.contains("[your answer]:")) {
+				int isRequestForSpecialFeature = 0;
+				int isRequestForSummary = 0;
+				int isRequestForFind = 0;
 
-						if (isValidURLText(msgText)) {
 
-							if (quizStatus == 0) {
+				// CHECK FOR SPECIAL FEATURES (@desummary AND @defind)
+				if (msgText.contains("@desummary") || msgText.contains("@defind")) {
 
-								quizStatus = 1;
+					String[] special_req_splitted = msgText.split("\\s+");
 
-								// Category 1: Link
-								String linkContent = processLinkContent(idTarget);
-								processText_ARTICLE_BODY(idTarget, linkContent);
+					if (special_req_splitted.length == 3) {
 
-							} else {
+						// Possibly a request for special feature
+						isRequestForSpecialFeature = 1;
 
-								// quiz is running
-								quizNotification = "Hi, the quiz is running right now. I can't accept that new URL as a resource. Please try again later when the quiz is finished.";
-								sendQuizNotification(idTarget);
+						if (special_req_splitted[0].equals("@desummary")) {
+
+							// Validate the format of @desummary
+							// FORMAT: @desummary<SPACE><number_of_summarized_text><SPACE><URL>
+							if (special_req_splitted[1].matches("[-+]?\\d*\\.?\\d+") && isValidURLText(special_req_splitted[2])) {
+
+								// Valid
+								isRequestForSummary = 1;
+								replyToUser(payload.events[0].replyToken, "Summarizing the article in the URL, please wait...");
 
 							}
 
-						} else {
+						} else if (special_req_splitted[0].equals("@defind")) {
 
-							if (!msgText.contains("[start the quiz]")) {
+							// Validate the format of @defind
+							// FORMAT: @defind<SPACE><keyword><SPACE><source_url>
+							if (isValidURLText(special_req_splitted[2])) {
 
-								// Check whether it's an article's body based on the message length
-								if (msgTextLength > 50) {
+								// Valid
+								isRequestForFind = 1;
+								replyToUser(payload.events[0].replyToken, "Searching for keyword '" + special_req_splitted[1] + "' in " + special_req_splitted[2]);
 
-									if (quizStatus == 0) {
+							}
 
-										replyToUser(payload.events[0].replyToken, "Hi, your text has more than 50 characters. I consider it as a new resource for the quiz.");
+						}
 
-										// Category 2: Article's body
-										processText_ARTICLE_BODY(idTarget, payload.events[0].message.text);
+					}
 
-									} else {
+				}
 
-										// quiz is still running
-										quizNotification = "Hi, I can't accept that new article as a resource while the quiz is running. Please try again later when the quiz is finished.";
-										sendQuizNotification(idTarget);
 
-									}
+				if (isRequestForSpecialFeature == 0) {
 
-								} else {
+					// MAIN FEATURE CONTROLLER
 
-									// Other categories
-									try {
+					// Check whether the user asks the bot to leave the chat room
+					if (!msgText.contains("bot leave")) {
 
-										handleOtherCategories(msgText, idTarget);
+						// Check the message's category
+						if (!msgText.contains("[your answer]:")) {
 
-									} catch (IOException e) {
-										System.out.println("Exception is raised ");
-										e.printStackTrace();
-									}
-
-								}
-
-							} else {
+							if (isValidURLText(msgText)) {
 
 								if (quizStatus == 0) {
 
-									// set the quiz status
-									quizStatus = 1;
+									replyToUser(payload.events[0].replyToken, "Hi, based on my analysis it's a valid URL. I'll try to get its content and generate the questions. This could take a few seconds based on the length of the article. So, please wait...");
 
-									// Initialize the timer
-									initializeTimer(idTarget);
-
-									// Retrieve and show the first question
-									retrieveAndShowTheQuestion(idTarget, 1);
+									// Category 1: Link
+									String linkContent = processLinkContent(msgText);
+									processText_ARTICLE_BODY(idTarget, linkContent);
 
 								} else {
 
-									// quiz is still running
-									quizNotification = "Hi, the quiz is currently running. You can start again when this quiz is completed.";
+									// quiz is running
+									quizNotification = "Hi, the quiz is running right now. I can't accept that new URL as a resource. Please try again later when the quiz is finished.";
 									sendQuizNotification(idTarget);
 
 								}
 
+							} else {
+
+								if (!msgText.contains("[start the quiz]")) {
+
+									// Check whether it's an article's body based on the message length
+									if (msgTextLength > 50) {
+
+										if (quizStatus == 0) {
+
+											// Check if the request contains special word like @de_summary, etc...
+											if (msgText.contains("@desummary")) {
+
+												// Process the special request
+												try {
+
+													handleOtherCategories(msgText, idTarget);
+
+												} catch (IOException e) {
+													System.out.println("Exception is raised ");
+													e.printStackTrace();
+												}
+
+											} else {
+
+												replyToUser(payload.events[0].replyToken, "Your text has more than 50 characters and based on my analysis it is not an URL. I'll generate the questions. This could take a few seconds based on the lenght of the article. So, please wait...");
+
+												// Category 2: Article's body
+												processText_ARTICLE_BODY(idTarget, payload.events[0].message.text);
+
+											}
+
+										} else {
+
+											// quiz is still running
+											quizNotification = "Hi, I can't accept that new article as a resource while the quiz is running. Please try again later when the quiz is finished.";
+											sendQuizNotification(idTarget);
+
+										}
+
+									} else {
+
+										// Other categories
+										try {
+
+											handleOtherCategories(msgText, idTarget);
+
+										} catch (IOException e) {
+											System.out.println("Exception is raised ");
+											e.printStackTrace();
+										}
+
+									}
+
+								} else {
+
+									if (quizStatus == 0) {
+
+										// set the quiz status
+										quizStatus = 1;
+
+										// Initialize the timer
+										initializeTimer(idTarget);
+
+										// Retrieve and show the first question
+										retrieveAndShowTheQuestion(idTarget, 1);
+
+									} else {
+
+										// quiz is still running
+										quizNotification = "Hi, the quiz is currently running. You can start again when this quiz is completed.";
+										sendQuizNotification(idTarget);
+
+									}
+
+								}
+
 							}
 
+						} else {
+
+							// Category 3: Answer
+							// Tokenize the answer template
+							// Get the question number
+							// Answer template: No.<QUESTION_NO><SPACE>[your answer]: [ A ] desc...
+
+							if (quizStatus == 1) {
+
+								// Get No.<QUESTION_NO> and the answer
+								String[] answerTemplateSplitted = msgText.split("\\s+");
+
+								processText_ANSWER(idTarget, answerTemplateSplitted[0], answerTemplateSplitted[4]);
+
+							} else {
+
+								// quiz is not running
+								quizNotification = "Hi, there is no any quiz running right now. You can submit an answer in a running quiz.";
+								sendQuizNotification(idTarget);
+
+							}
 						}
 
 					} else {
 
-						// Category 3: Answer
-						// Tokenize the answer template
-						// Get the question number
-						// Answer template: No.<QUESTION_NO><SPACE>[your answer]: [ A ] desc...
+						if (payload.events[0].source.type.equals("group")) {
 
-						if (quizStatus == 1) {
+							leaveGR(payload.events[0].source.groupId, "group");
 
-							// Get No.<QUESTION_NO> and the answer
-							String[] answerTemplateSplitted = msgText.split("\\s+");
+						} else if (payload.events[0].source.type.equals("room")) {
 
-							processText_ANSWER(idTarget, answerTemplateSplitted[0], answerTemplateSplitted[4]);
-
-						} else {
-
-							// quiz is not running
-							quizNotification = "Hi, there is no any quiz running right now. You can submit an answer in a running quiz.";
-							sendQuizNotification(idTarget);
+							leaveGR(payload.events[0].source.roomId, "room");
 
 						}
+
 					}
 
 				} else {
 
-					if (payload.events[0].source.type.equals("group")){
+					// SPECIAL FEATURES CONTROLLER
+					if (isRequestForSummary == 1 || isRequestForFind == 1) {
 
-						leaveGR(payload.events[0].source.groupId, "group");
+						// Other categories
+						try {
 
-					} else if (payload.events[0].source.type.equals("room")){
+							handleOtherCategories(msgText, idTarget);
 
-						leaveGR(payload.events[0].source.roomId, "room");
+						} catch (IOException e) {
+							System.out.println("Exception is raised ");
+							e.printStackTrace();
+						}
+
+					} else {
+
+						// Invalid request for special features
+						String invalidReqSpecialFeature = "";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "I detect that you likely wanted to access one of special features.";
+
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "\n\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "To do it, try to use the following formats:";
+
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "\n\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "- To summarize an article in an URL: @desummary<SPACE><number_of_summarized_text><SPACE><URL>\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "Example:\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "Query: @desummary 3 http://www.example.com\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "Result: Text 1. Text 2. Text 3.";
+
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "\n\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "- To retrieve several pages on a website containing your keyword: @defind<SPACE><keyword><SPACE><website_url>\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "Example:\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "Query: @defind fruit http://www.example.com\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "Result:\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "- http://www.example.com/page1\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "- http://www.example.com/page2\n";
+						invalidReqSpecialFeature = invalidReqSpecialFeature + "- http://www.example.com/page3\n";
+
+						replyToUser(payload.events[0].replyToken, invalidReqSpecialFeature);
 
 					}
 
@@ -295,18 +411,16 @@ public class DeepEnglishController {
 
 
 	// Category 1
-	private String processLinkContent(String targetID) {
+	private String processLinkContent(String url_msg_txt) {
 
 		String content = "";
 
 		try {
 
-			final HTMLDocument htmlDoc = HTMLFetcher.fetch(new URL(payload.events[0].message.text));
+			final HTMLDocument htmlDoc = HTMLFetcher.fetch(new URL(url_msg_txt));
 			final TextDocument doc = new BoilerpipeSAXInput(htmlDoc.toInputSource()).getTextDocument();
 
 			content = CommonExtractors.ARTICLE_EXTRACTOR.getText(doc);
-
-			//System.out.println(content);
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -454,7 +568,9 @@ public class DeepEnglishController {
 		if (listOfEligibleNewData_ACTUAL.size() != 0) {
 
 
-			pushMessage(targetID, "Hi! I've got " + listOfEligibleNewData_ACTUAL.size() + " eligible questions!");
+			///////////////////////////////////
+			pushMessage(targetID, "Hi! I've got " + listOfEligibleNewData_ACTUAL.size() + " eligible questions. I'm generating the four answer options. This could take a few minutes based on the number of generated questions. So, please wait...");
+			///////////////////////////////////
 
 
 			// Clear the questions table
@@ -481,7 +597,7 @@ public class DeepEnglishController {
 				if (foundZeroStatus == 1) {
 
 					// Send error push message to user
-					pushMessage(targetID, "Sorry, there was a problem in accessing the database.");
+					pushMessage(targetID, "Sorry, there was a problem in accessing the database [storing questions]");
 
 				} else {
 
@@ -494,13 +610,13 @@ public class DeepEnglishController {
 			} else {
 
 				// Send error push message to user
-				pushMessage(targetID, "Sorry, there was a problem in accessing the database [clear: table question]");
+				pushMessage(targetID, "Sorry, there was a problem in accessing the database [clearing questions]");
 
 			}
 
 		} else {
 
-			pushMessage(targetID, "Sorry, I can't generate questions from the requested article.");
+			pushMessage(targetID, "Sorry, based on my knowledge I couldn't find any eligible questions that are good enough to examnine your understanding. Please try again with another article.");
 
 		}
 
@@ -531,6 +647,8 @@ public class DeepEnglishController {
 		// set mDao
 		ac.setDao(mDao);
 
+		// set id target
+		ac.setIdTarget(idTarget);
 
 		// check the result
 		//int answerValue = ac.checkAnswer();
@@ -561,12 +679,17 @@ public class DeepEnglishController {
 		// set mDao
 		dg.setDao(mDao);
 
+		// set idTarget
+		dg.setIdTarget(idTarget);
+
 		// retrieve and set up all english words
 		List<String> listOfEnglishWords = dg.retrieveAllEnglishWords();
 		dg.setListOfEnglishWords(listOfEnglishWords);
 
 
-		pushMessage(targetID, "Successfully set list of english words: " + listOfEnglishWords.size() + ", " + listOfEligibleBlankNewData.size());
+		/////////////////////////////////////////
+		//pushMessage(targetID, "Successfully set list of english words: " + listOfEnglishWords.size() + ", " + listOfEligibleBlankNewData.size());
+		/////////////////////////////////////////
 
 
 		listOfDBAccessStatus = dg.generateDistractor(targetID);
@@ -581,10 +704,10 @@ public class DeepEnglishController {
 
 		// RETURN the number of deleted rows
 
-		int clearingQuestTableStatus = mDao.clearQuestionsTable(targetID, lChannelAccessToken);
+		int clearingQuestTableStatus = mDao.clearQuestionsTable(targetID, lChannelAccessToken, idTarget);
 
 		///////////////////////
-		pushMessage(targetID, "clearQuestionsTableStatus: " + clearingQuestTableStatus);
+		//pushMessage(targetID, "clearQuestionsTableStatus: " + clearingQuestTableStatus);
 		///////////////////////
 
 		return clearingQuestTableStatus;
@@ -597,10 +720,10 @@ public class DeepEnglishController {
 
 		// RETURN the number of deleted rows
 
-		int clearingAnsTableStatus = mDao.clearAnswersTable(targetID, lChannelAccessToken);
+		int clearingAnsTableStatus = mDao.clearAnswersTable(targetID, lChannelAccessToken, idTarget);
 
 		///////////////////////
-		pushMessage(targetID, "clearAnswersTableStatus: " + clearingAnsTableStatus);
+		//pushMessage(targetID, "clearAnswersTableStatus: " + clearingAnsTableStatus);
 		///////////////////////
 
 		return clearingAnsTableStatus;
@@ -631,6 +754,9 @@ public class DeepEnglishController {
 			// set mDao
 			qc.setDao(mDao);
 
+			// set id target
+			qc.setIdTarget(idTarget);
+
 			// retrieve question with number <questionNumber>
 
 			// REMOVE THE TWO PARAMETERS !!!
@@ -641,7 +767,7 @@ public class DeepEnglishController {
 			if (retrievedQuestion == null) {
 
 				// Send a push message notifying that the quiz is finished
-				pushMessage(targetID, "You've answered all the questions! Thank you.");
+				pushMessage(targetID, "You've answered all the questions! Nice. Here is your quiz result.");
 
 				// Show the result
 				showTheQuizResult(targetID);
@@ -689,7 +815,7 @@ public class DeepEnglishController {
 
 		} else {
 
-			pushMessage(targetID, "Sorry, there was an error in accessing the database [clear: table answer]");
+			pushMessage(targetID, "Sorry, there was an error in accessing the database [clearing answers]");
 
 		}
 
@@ -721,7 +847,7 @@ public class DeepEnglishController {
 
 
 		/////////////////
-		pushMessage(targetID, "date start: " + dateStart);
+		//pushMessage(targetID, "date start: " + dateStart);
 		/////////////////
 
 
@@ -768,7 +894,7 @@ public class DeepEnglishController {
 		// set the quiz status to 0 (stop)
 		quizStatus = 0;
 
-		List<Answer> answerHistory = mDao.getAnswerHistory();
+		List<Answer> answerHistory = mDao.getAnswerHistory(idTarget);
 
 		// send a push message notifying the quiz result
 		String quizResult = "";
@@ -788,15 +914,15 @@ public class DeepEnglishController {
 
 		quizResult = quizResult + "\n\n";
 		quizResult = quizResult + "[Number of Correct Answers]\n";
-		quizResult = quizResult + "---------------------------\n";
-		quizResult = quizResult + String.valueOf(countCorrectAns);
+		quizResult = quizResult + "--------------------------------\n";
+		quizResult = quizResult + String.valueOf(countCorrectAns) + " from " + answerHistory.size();
 
 		// create the time needed from start to finish
 		List<Long> listOfTimeDiffElements = getListOfTimeDiffElements();
 
 		quizResult = quizResult + "\n\n";
 		quizResult = quizResult + "[Completion Time]\n";
-		quizResult = quizResult + "-----------------\n";
+		quizResult = quizResult + "--------------------\n";
 		quizResult = quizResult + listOfTimeDiffElements.get(0) + " days, ";
 		quizResult = quizResult + listOfTimeDiffElements.get(1) + " hours, ";
 		quizResult = quizResult + listOfTimeDiffElements.get(2) + " minutes, ";
@@ -804,9 +930,9 @@ public class DeepEnglishController {
 
 		quizResult = quizResult + "\n\n";
 		quizResult = quizResult + "[Answer History]\n";
-		quizResult = quizResult + "---------------------------------\n";
+		quizResult = quizResult + "----------------------------------\n";
 		quizResult = quizResult + "(No, Your Answer, Correct Answer)\n";
-		quizResult = quizResult + "---------------------------------\n\n";
+		quizResult = quizResult + "----------------------------------\n\n";
 
 		for (Answer ans : answerHistory) {
 
@@ -864,16 +990,17 @@ public class DeepEnglishController {
 		String title = "Your Quiz State";
 		String runningQuizMsg = quizNotification;
 
-		String[] label = new String[3];
+		String[] label = new String[4];
 		label[0] = "Who am I?";
 		label[1] = "What can you do?";
-		label[2] = "What are my technical support?";
+		label[2] = "Special features";
+		label[3] = "Others";
 
-		String[] action = new String[3];
+		String[] action = new String[4];
 		action[0] = "[who am i]";
 		action[1] = "[what can you do]";
-		action[2] = "[what are my technical support]";
-
+		action[2] = "[special features]";
+		action[3] = "[others]";
 
 		buttonTemplate(runningQuizMsg, label, action, title);
 
@@ -904,24 +1031,54 @@ public class DeepEnglishController {
 	}
 
 
+	// Method for sending message notifying that the bot does not understand the request
+	private void botDoesNotUnderstandMessage() {
+
+		String txt_not_understand = "Sorry, I don't understand your request. I hope that you want to read the rules. Cheers :)";
+
+		String[] label = new String[4];
+		label[0] = "Who am I?";
+		label[1] = "What can you do?";
+		label[2] = "Special features";
+		label[3] = "Others";
+
+		String[] action = new String[4];
+		action[0] = "[who am i]";
+		action[1] = "[what can you do]";
+		action[2] = "[special features]";
+		action[3] = "[others]";
+
+		String title = "BotNotUnderstand";
+
+
+		buttonTemplate(txt_not_understand, label, action, title);
+
+	}
+
+
 	// Method for sending message when there a user adds this bot as friend
 	private void greetingMessage() {
 
-		getUserProfile(payload.events[0].source.userId);
+		//getUserProfile(payload.events[0].source.userId);
 
-		String greetingMsg = "Hi " + displayName + "! I'm DeepEnglish and I'd like to help you in improving your English reading comprehension skill. Just click on any button below to get acquainted with me :)";
+		getUserProfile(idTarget);
 
-		String[] label = new String[3];
+		String greetingMsg = "Welcome to DeepEnglish! You can click on any button below to get acquainted with me.";
+
+		String[] label = new String[4];
 		label[0] = "Who am I?";
 		label[1] = "What can you do?";
-		label[2] = "What are my technical support?";
+		label[2] = "Special features";
+		label[3] = "Others";
 
-		String[] action = new String[3];
+		String[] action = new String[4];
 		action[0] = "[who am i]";
 		action[1] = "[what can you do]";
-		action[2] = "[what are my technical support]";
+		action[2] = "[special features]";
+		action[3] = "[others]";
 
-		String title = "Welcome to DeepEnglish!";
+		String title = "Hello, " + displayName;
+
 
 		buttonTemplate(greetingMsg, label, action, title);
 
@@ -955,7 +1112,7 @@ public class DeepEnglishController {
 	// Method for sending message as a notification to start the quiz
 	private void startTheQuizMessage() {
 
-		String greetingMsg = "Thank you for the resource. I'd successfully generated several questions based on the resource you submitted. Just click the button below to start the quiz.";
+		String greetingMsg = "Thanks for the resource and your patience. I'd successfully generated the questions and their answer options. Click the button below to start the quiz.";
 
 		String[] label = new String[1];
 		label[0] = "Start the Quiz";
@@ -975,27 +1132,27 @@ public class DeepEnglishController {
 
 		String deepEngMsg = "";
 
-		if (userTxt.contains("end quiz")) {
+		if (userTxt.equals("end quiz")) {
 
 			// finish the quiz and show the result
-			replyToUser(payload.events[0].replyToken, "As you wish. Ending the quiz. Done.");
+			replyToUser(payload.events[0].replyToken, "Ending the quiz. Done. Thanks for taking the quiz and here is your result.");
 
 			showTheQuizResult(targetID);
 
-		} else if (userTxt.contains("[who am i]")) {
+		} else if (userTxt.equals("[who am i]")) {
 
 			// Show the basic idea of DeepEnglish
 
-			deepEngMsg = deepEngMsg + "[WHO AM I?]\n";
-			deepEngMsg = deepEngMsg + "-----------";
+			deepEngMsg = deepEngMsg + "[ WHO AM I? ]\n";
+			deepEngMsg = deepEngMsg + "---------------";
 
 			deepEngMsg = deepEngMsg + "\n\n";
 			deepEngMsg = deepEngMsg + "I'm here to help you in improving your English reading comprehension skill. ";
 			deepEngMsg = deepEngMsg + "You'll learn through a reading quiz in the form of multiple choice questions.";
 
 			deepEngMsg = deepEngMsg + "\n\n";
-			deepEngMsg = deepEngMsg + "[THE BASIC IDEA]\n";
-			deepEngMsg = deepEngMsg + "----------------\n";
+			deepEngMsg = deepEngMsg + "[ THE BASIC IDEA ]\n";
+			deepEngMsg = deepEngMsg + "--------------------\n";
 			deepEngMsg = deepEngMsg + "You can read any articles written in English and try to understand what the article is all about. ";
 			deepEngMsg = deepEngMsg + "Then, just give me that article and I'll generate several multiple choice questions based on it. ";
 			deepEngMsg = deepEngMsg + "I'll try to understand the topic of the article and provide you with qualified questions. I'll also ";
@@ -1005,10 +1162,10 @@ public class DeepEnglishController {
 			// Send as a push message
 			pushMessage(targetID, deepEngMsg);
 
-		} else if (userTxt.contains("[what can you do]")) {
+		} else if (userTxt.equals("[what can you do]")) {
 
-			deepEngMsg = deepEngMsg + "[WHAT CAN YOU DO?]\n";
-			deepEngMsg = deepEngMsg + "------------------";
+			deepEngMsg = deepEngMsg + "[ WHAT CAN YOU CAN DO ]\n";
+			deepEngMsg = deepEngMsg + "------------------------";
 
 			deepEngMsg = deepEngMsg + "\n\n";
 			deepEngMsg = deepEngMsg + "Here are the main process you can do to get the maximum learning value:\n";
@@ -1028,12 +1185,152 @@ public class DeepEnglishController {
 			deepEngMsg = deepEngMsg + "7. You can choose to complete all questions generated by me OR end the quiz while it's running. ";
 			deepEngMsg = deepEngMsg + "For the latter case, just type 'end quiz' and I'll stop the quiz.\n\n";
 			deepEngMsg = deepEngMsg + "8. After the quiz is finished (or ended in the middle session), I'll show your quiz result. ";
-			deepEngMsg = deepEngMsg + "It includes the total number of correct answers, the completion time, and the answer history.\n\n";
+			deepEngMsg = deepEngMsg + "It includes the total number of correct answers, the completion time, and the answer history.";
 
 			// Send as a push message
 			pushMessage(targetID, deepEngMsg);
 
+		} else if (userTxt.equals("[special features]")) {
+
+			deepEngMsg = deepEngMsg + "[ SPECIAL FEATURES ]";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "Besides my main capability to generate questions based on your article, I also provides these special features that can be used to speed up your study:\n";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "1. Summarizer: Got a good article in a website yet too long to read? Simply give your article and the number of summarized text you want to this feature and it will give you the only important information of the article. Noted that you can only provide the link containing the article, so you can't copy the article and paste it as a request. To use it, you need to provide a valid request format in order to get the desired result.";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "Format:\n";
+			deepEngMsg = deepEngMsg + "- @desummary<SPACE><number_of_summarized_text><SPACE><URL>";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "Example:\n";
+			deepEngMsg = deepEngMsg + "- Query: @desummary 3 http://www.example.com\n";
+			deepEngMsg = deepEngMsg + "- Result: Text 1. Text 2. Text 3.\n";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "2. Spider: Got a good website and wanted to search for a keyword in it? Just use this feature as it can give you all the pages in the website containing your search keyword.";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "Format:\n";
+			deepEngMsg = deepEngMsg + "- @defind<SPACE><keyword><SPACE><source_url>";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "Example:\n";
+			deepEngMsg = deepEngMsg + "- Query: @defind fruit http://www.example.com\n";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "- Result:\n";
+			deepEngMsg = deepEngMsg + "1. http://www.example.com/page1\n";
+			deepEngMsg = deepEngMsg + "2. http://www.example.com/page2\n";
+			deepEngMsg = deepEngMsg + "3. http://www.example.com/page3";
+
+
+			// Send as a push message
+			pushMessage(targetID, deepEngMsg);
+
+
+		} else if (userTxt.equals("[others]")) {
+
+			deepEngMsg = deepEngMsg + "[ MY CREATOR ]\n";
+			deepEngMsg = deepEngMsg + "-----------------";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "I was created by Albertus Kelvin";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "[ MY TECHNICAL STUFFS ]\n";
+			deepEngMsg = deepEngMsg + "----------------------------";
+
+			deepEngMsg = deepEngMsg + "\n\n";
+			deepEngMsg = deepEngMsg + "I was built using these following awesome technologies:\n\n";
+			deepEngMsg = deepEngMsg + "1. Java with Spring as the framework\n\n";
+			deepEngMsg = deepEngMsg + "2. PostgreSQL as the database\n\n";
+			deepEngMsg = deepEngMsg + "3. Machine learning. I use it to determine whether a question is good enough to examine your understanding on the article.\n\n";
+			deepEngMsg = deepEngMsg + "4. Distractor generator algorithm. I use it to generate the best answers choices based on the corresponding question. Their relation can be tricky for you and I think it is good for a real test.\n\n";
+			deepEngMsg = deepEngMsg + "5. Content extractor. I use it to extract only the important and suitable contents of the article's URL.\n\n";
+			deepEngMsg = deepEngMsg + "6. Text summarizer. It is a part of Classifier4J, a Java library for text classification. I use it to create a summary of your article.\n\n";
+			deepEngMsg = deepEngMsg + "7. Web crawler (spider). I use it to find all pages in a website that contain your requested keyword.";
+
+
+			// Send as a push message
+			pushMessage(targetID, deepEngMsg);
+
+		} else {
+
+			// VERY RANDOM REQUEST
+			if (userTxt.contains("@desummary")) {
+
+				String[] special_req_splitted = userTxt.split("\\s+");
+
+				// Get the URL's content
+				String summURLContent = processLinkContent(special_req_splitted[2]);
+
+				// Summarize the content
+				String summary_result = getSummary(Integer.parseInt(special_req_splitted[1]), summURLContent);
+
+				// Send the summary as a push message
+				String txtAdd_summary_result = "";
+				txtAdd_summary_result = txtAdd_summary_result + "[ YOUR ARTICLE'S SUMMARY ]\n";
+				txtAdd_summary_result = txtAdd_summary_result + "-------------------------------";
+
+				txtAdd_summary_result = txtAdd_summary_result + "\n\n";
+				txtAdd_summary_result = txtAdd_summary_result + summary_result;
+
+				pushMessage(targetID, txtAdd_summary_result);
+
+			} else if (userTxt.contains("@defind")) {
+
+				String[] special_req_splitted = userTxt.split("\\s+");
+
+				List<String> listOfPageWithKeyword = getPagesWithKeyword(special_req_splitted[1], special_req_splitted[2]);
+
+				// send a push message
+				String txt_defind = "";
+				txt_defind = txt_defind + "[ PAGES CONTAINING THE KEYWORD ]\n";
+				txt_defind = txt_defind + "----------------------------------]";
+
+				txt_defind = txt_defind + "\n\n";
+				txt_defind = txt_defind + "Keyword: " + special_req_splitted[1];
+
+				txt_defind = txt_defind + "\n\n";
+				for (int defindIDX = 0; defindIDX < listOfPageWithKeyword.size(); defindIDX++) {
+
+					txt_defind = txt_defind + String.valueOf(defindIDX + 1) + ". " + listOfPageWithKeyword.get(defindIDX) + "\n";
+
+				}
+
+				pushMessage(targetID, txt_defind);
+
+			} else {
+
+				// CHAT BOT DOES NOT RECOGNIZE IT
+				botDoesNotUnderstandMessage();
+
+			}
+
 		}
+
+	}
+
+
+	// Method for retrieving all pages containing the specified keyword
+	private List<String> getPagesWithKeyword(String userKeyword, String sourceURL) {
+
+		Spider spider = new Spider();
+
+		return spider.search(sourceURL, userKeyword);
+
+	}
+
+
+	// Method for building the summary of article
+	private String getSummary(int numOfSentences, String articleContent) {
+
+		TextSummariser smr = new TextSummariser(numOfSentences, articleContent);
+
+		return smr.getSummary();
 
 	}
 
@@ -1048,13 +1345,15 @@ public class DeepEnglishController {
 			buttonsTemplate = new ButtonsTemplate(null, null, message,
 					Arrays.asList(new MessageAction(label[0], action[0])));
 
-		} else if (title.equals("Welcome to DeepEnglish!") || title.equals("Your Quiz State")) {
+		} else if (title.contains("Hello") || title.equals("Your Quiz State") || title.equals("BotNotUnderstand")) {
 
 			buttonsTemplate = new ButtonsTemplate(null, null, message,
 					Arrays.asList(new MessageAction(label[0], action[0]),
 							new MessageAction(label[1], action[1]),
-							new MessageAction(label[2], action[2])
+							new MessageAction(label[2], action[2]),
+							new MessageAction(label[3], action[3])
 					));
+
 
 		} else {
 
@@ -1081,8 +1380,10 @@ public class DeepEnglishController {
 			System.out.println(response.code() + " " + response.message());
 
 		} catch (IOException e) {
+
 			System.out.println("Exception is raised ");
 			e.printStackTrace();
+
 		}
 
 	}

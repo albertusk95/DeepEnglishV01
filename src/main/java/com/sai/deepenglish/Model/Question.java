@@ -3,6 +3,7 @@ package com.sai.deepenglish.Model;
 public class Question {
 
     private Long id;
+    private String user_id;
     private String question_no;
     private String question;
     private String choice_zero;
@@ -11,9 +12,10 @@ public class Question {
     private String choice_three;
 
 
-    public Question(Long id, String question_no, String question, String choice_zero, String choice_one, String choice_two, String choice_three) {
+    public Question(Long id, String user_id, String question_no, String question, String choice_zero, String choice_one, String choice_two, String choice_three) {
 
         this.id = id;
+        this.user_id = user_id;
         this.question_no = question_no;
         this.question = question;
         this.choice_zero = choice_zero;
@@ -30,6 +32,10 @@ public class Question {
     // GETTER
     public Long getID() {
         return id;
+    }
+
+    public String getUserID() {
+        return user_id;
     }
 
     public String getQuestionNo() {

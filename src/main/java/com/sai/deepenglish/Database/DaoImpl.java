@@ -36,21 +36,23 @@ public class DaoImpl implements Dao {
     //private final static String SQL_GET_BY_JOIN=SQL_SELECT_ALL_EVENT + " WHERE event_id = ? AND user_id = ?;";
 
     // Query for questions table
-    private final static String SQL_SELECT_ALL_QUESTION = "SELECT id, question_no, question, choice_zero, choice_one, choice_two, choice_three FROM questions_table";
-    private final static String SQL_STORE_QUESTION = "INSERT INTO questions_table (question_no, question, choice_zero, choice_one, choice_two, choice_three) VALUES (?, ?, ?, ?, ?, ?);";
-    private final static String SQL_CLEAR_QUESTIONS_TABLE = "DELETE FROM questions_table;";
-    private final static String SQL_GET_QUESTION_BY_NUMBER = SQL_SELECT_ALL_QUESTION + " WHERE LOWER(question_no) LIKE LOWER(?);";
+    private final static String SQL_SELECT_ALL_QUESTION = "SELECT id, user_id, question_no, question, choice_zero, choice_one, choice_two, choice_three FROM questions_table";
+    private final static String SQL_STORE_QUESTION = "INSERT INTO questions_table (user_id, question_no, question, choice_zero, choice_one, choice_two, choice_three) VALUES (?, ?, ?, ?, ?, ?, ?);";
+    private final static String SQL_CLEAR_QUESTIONS_TABLE = "DELETE FROM questions_table WHERE user_id = ?;";
+    private final static String SQL_GET_QUESTION_BY_NUMBER = SQL_SELECT_ALL_QUESTION + " WHERE user_id = ? AND LOWER(question_no) LIKE LOWER(?);";
 
-    private final static String SQL_SELECT_ALL_QUESTION_FOR_DELETE = "SELECT id, question_no, question, choice_zero, choice_one, choice_two, choice_three FROM questions_table;";
+    private final static String SQL_SELECT_ALL_QUESTION_FOR_DELETE = "SELECT id, user_id, question_no, question, choice_zero, choice_one, choice_two, choice_three FROM questions_table WHERE user_id = ?;";
 
 
     // Query for answers table
-    private final static String SQL_SELECT_ALL_ANSWER = "SELECT id, question_no, chosen_answer, right_answer FROM answers_table;";
-    private final static String SQL_STORE_ANSWER = "INSERT INTO answers_table (question_no, chosen_answer, right_answer) VALUES (?, ?, ?);";
-    private final static String SQL_CLEAR_ANSWERS_TABLE = "DELETE FROM answers_table;";
+    private final static String SQL_SELECT_ALL_ANSWER = "SELECT id, user_id, question_no, chosen_answer, right_answer FROM answers_table WHERE user_id = ?;";
+    private final static String SQL_STORE_ANSWER = "INSERT INTO answers_table (user_id, question_no, chosen_answer, right_answer) VALUES (?, ?, ?, ?);";
+    private final static String SQL_CLEAR_ANSWERS_TABLE = "DELETE FROM answers_table WHERE user_id = ?;";
 
-    private final static String SQL_SELECT_ALL_ANSWER_FOR_GET = "SELECT id, question_no, chosen_answer, right_answer FROM answers_table";
-    private final static String SQL_GET_ANSWERS_BY_NUMBER = SQL_SELECT_ALL_ANSWER_FOR_GET + " WHERE LOWER(question_no) LIKE LOWER(?);";
+    private final static String SQL_SELECT_ALL_ANSWER_FOR_DELETE = "SELECT id, user_id, question_no, chosen_answer, right_answer FROM answers_table WHERE user_id = ?;";
+
+    //private final static String SQL_SELECT_ALL_ANSWER_FOR_GET = "SELECT id, question_no, chosen_answer, right_answer FROM answers_table";
+    //private final static String SQL_GET_ANSWERS_BY_NUMBER = SQL_SELECT_ALL_ANSWER_FOR_GET + " WHERE LOWER(question_no) LIKE LOWER(?);";
 
     private JdbcTemplate mJdbc;
 
@@ -65,6 +67,7 @@ public class DaoImpl implements Dao {
 
                 Question q = new Question(
                                     aRs.getLong("id"),
+                                    aRs.getString("user_id"),
                                     aRs.getString("question_no"),
                                     aRs.getString("question"),
                                     aRs.getString("choice_zero"),
@@ -95,6 +98,7 @@ public class DaoImpl implements Dao {
 
                 Question q = new Question(
                         aRs.getLong("id"),
+                        aRs.getString("user_id"),
                         aRs.getString("question_no"),
                         aRs.getString("question"),
                         aRs.getString("choice_zero"),
@@ -124,6 +128,7 @@ public class DaoImpl implements Dao {
 
                 Answer ans = new Answer(
                                 aRs.getLong("id"),
+                                aRs.getString("user_id"),
                                 aRs.getString("question_no"),
                                 aRs.getString("chosen_answer"),
                                 aRs.getString("right_answer")
@@ -147,7 +152,7 @@ public class DaoImpl implements Dao {
     }
 
     // Store the eligible question in the database
-    public int storeEligibleQuestion(String targetID, String lChannelAccessToken, int questionNumber, String theQuestion, String[] theChoices) {
+    public int storeEligibleQuestion(String targetID, String lChannelAccessToken, String user_id, int questionNumber, String theQuestion, String[] theChoices) {
 
 
         ///////////////////////////////////////
@@ -156,14 +161,14 @@ public class DaoImpl implements Dao {
         ///////////////////////////////////////
 
 
-        return mJdbc.update(SQL_STORE_QUESTION, new Object[]{String.valueOf(questionNumber), theQuestion, theChoices[0], theChoices[1], theChoices[2], theChoices[3]});
+        return mJdbc.update(SQL_STORE_QUESTION, new Object[]{user_id, String.valueOf(questionNumber), theQuestion, theChoices[0], theChoices[1], theChoices[2], theChoices[3]});
 
     }
 
     // Clear the questions table
-    public int clearQuestionsTable(String targetID, String lChannelAccessToken) {
+    public int clearQuestionsTable(String targetID, String lChannelAccessToken, String user_id) {
 
-        List<Question> clearLQ = mJdbc.query(SQL_SELECT_ALL_QUESTION_FOR_DELETE, MULTIPLE_RS_EXTRACTOR_QUESTION);
+        List<Question> clearLQ = mJdbc.query(SQL_SELECT_ALL_QUESTION_FOR_DELETE, new Object[]{user_id}, MULTIPLE_RS_EXTRACTOR_QUESTION);
 
         if (clearLQ.size() != 0) {
 
@@ -175,7 +180,7 @@ public class DaoImpl implements Dao {
             //            + clearLQ.get(0));
             ///////////////////////////////////////
 
-            return mJdbc.update(SQL_CLEAR_QUESTIONS_TABLE);
+            return mJdbc.update(SQL_CLEAR_QUESTIONS_TABLE, new Object[]{user_id});
 
         }
 
@@ -191,16 +196,16 @@ public class DaoImpl implements Dao {
     }
 
     // Store the answer in the database
-    public int storeAnswer(String targetID, String lChannelAccessToken, String questionNo, String chosenAnswer, String rightAnswer) {
+    public int storeAnswer(String targetID, String lChannelAccessToken, String user_id, String questionNo, String chosenAnswer, String rightAnswer) {
 
-        return mJdbc.update(SQL_STORE_ANSWER, new Object[]{questionNo, chosenAnswer, rightAnswer});
+        return mJdbc.update(SQL_STORE_ANSWER, new Object[]{user_id, questionNo, chosenAnswer, rightAnswer});
 
     }
 
     // Clear answers table
-    public int clearAnswersTable(String targetID, String lChannelAccessToken) {
+    public int clearAnswersTable(String targetID, String lChannelAccessToken, String user_id) {
 
-        List<Answer> clearLA = mJdbc.query(SQL_SELECT_ALL_ANSWER, MULTIPLE_RS_EXTRACTOR_ANSWER);
+        List<Answer> clearLA = mJdbc.query(SQL_SELECT_ALL_ANSWER_FOR_DELETE, new Object[]{user_id}, MULTIPLE_RS_EXTRACTOR_ANSWER);
 
         if (clearLA.size() != 0) {
 
@@ -210,7 +215,7 @@ public class DaoImpl implements Dao {
             //pushMessage(targetID, lChannelAccessToken, "TABLE ANSWERS IS NOT EMPTY " + clearLA.size());
             ///////////////////////////////////////
 
-            return mJdbc.update(SQL_CLEAR_ANSWERS_TABLE);
+            return mJdbc.update(SQL_CLEAR_ANSWERS_TABLE, new Object[]{user_id});
 
         }
 
@@ -225,14 +230,14 @@ public class DaoImpl implements Dao {
     }
 
     // Retrieve the questions with number <questionNumber>
-    public Question getQuestion(String targetID, String lChannelAccessToken, int questionNumber) {
+    public Question getQuestion(String targetID, String lChannelAccessToken, String user_id, int questionNumber) {
 
 
-        Question lQ = mJdbc.query(SQL_GET_QUESTION_BY_NUMBER, new Object[]{"%" + String.valueOf(questionNumber) + "%"}, SINGLE_RS_EXTRACTOR_QUESTION);
+        Question lQ = mJdbc.query(SQL_GET_QUESTION_BY_NUMBER, new Object[]{user_id, "%" + String.valueOf(questionNumber) + "%"}, SINGLE_RS_EXTRACTOR_QUESTION);
 
 
         ///////////////////////////////////////
-        pushMessage(targetID, lChannelAccessToken, "'%" + questionNumber + "%'" + " : " + lQ);
+        //pushMessage(targetID, lChannelAccessToken, "'%" + questionNumber + "%'" + " : " + lQ);
         ///////////////////////////////////////
 
 
@@ -244,9 +249,9 @@ public class DaoImpl implements Dao {
 
 
     // Retrieve the answer history
-    public List<Answer> getAnswerHistory() {
+    public List<Answer> getAnswerHistory(String user_id) {
 
-        return mJdbc.query(SQL_SELECT_ALL_ANSWER, MULTIPLE_RS_EXTRACTOR_ANSWER);
+        return mJdbc.query(SQL_SELECT_ALL_ANSWER, new Object[]{user_id}, MULTIPLE_RS_EXTRACTOR_ANSWER);
 
     }
 
